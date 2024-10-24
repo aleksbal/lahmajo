@@ -1,4 +1,4 @@
 # lahmajo
-Basic web wrapper for local LLama model (deployed as Ollama) to augment the prompts using generic prompt templates, RAG, context etc.
+A sort of gateway/API for local LLama model (deployed as Ollama) to RAG the prompts providing the context suited for particular use case, cache results, etc.
 
 Ollama shall be up and running on a local machine in order to the service to work properly.
