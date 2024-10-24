@@ -1,4 +1,3 @@
-# lahmajo
-A sort of gateway/API for local LLama model (deployed as Ollama) to RAG the prompts providing the context suited for particular use case, cache results, etc.
+This project provides an API gateway for a locally deployed LLama model (running via Ollama) to perform Retrieval-Augmented Generation (RAG). The service enhances prompts by retrieving context tailored to specific use cases, improving the relevance of the responses. Additionally, it includes result caching to optimize performance and minimize redundant processing.
 
-Ollama shall be up and running on a local machine in order to the service to work properly.
+To function correctly, Ollama must be running on the local machine where this service is deployed.
