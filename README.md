@@ -1,4 +1,4 @@
 # lahmajo
-Basic web wrapper for a local LLama model (Ollama) to augment the prompts using generic prompt templates, RAG, context etc.
+Basic web wrapper for local LLama model (deployed as Ollama) to augment the prompts using generic prompt templates, RAG, context etc.
 
-Ollama shall be up and running on a local machine in order to the service to work properly
+Ollama shall be up and running on a local machine in order to the service to work properly.
