@@ -2,9 +2,8 @@
 import bs4
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_ollama import OllamaEmbeddings
 from langchain_experimental.text_splitter import SemanticChunker
-
+from langchain_ollama import OllamaEmbeddings
 
 def build_vector_store() -> InMemoryVectorStore:
     # 1) Load the raw document from the web
@@ -21,7 +20,10 @@ def build_vector_store() -> InMemoryVectorStore:
     docs = loader.load()  # -> list[Document]
 
     # 2) Embeddings (we'll reuse same instance for chunking + vector store)
-    embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    embeddings = OllamaEmbeddings(
+        model="nomic-embed-text",
+        base_url="http://127.0.0.1:11434",
+    )
 
     # 3) Semantic chunker instead of RecursiveCharacterTextSplitter
     #    It detects semantic breakpoints using embeddings.

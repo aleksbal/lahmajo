@@ -27,8 +27,9 @@ def retrieve_context(query: str):
 def create_rag_agent():
     # Local Ollama chat model
     model = ChatOllama(
-        model="mistral",      # or llama3.1, mistral, etc.
+        model="mistral",  # or llama3
         temperature=0.1,
+        base_url="http://127.0.0.1:11434",
     )
 
     tools = [retrieve_context]
