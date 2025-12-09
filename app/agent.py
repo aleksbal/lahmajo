@@ -8,13 +8,22 @@ from langchain_ollama import ChatOllama
 from app.indexing import build_vector_store
 
 
-# Build vector store once per process
-vector_store = build_vector_store()
+# Lazy initialization - build vector store only when first needed
+_vector_store = None
+
+
+def get_vector_store():
+    """Get or build the vector store (lazy initialization)."""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = build_vector_store(show_progress=True)
+    return _vector_store
 
 
 @tool(response_format="content_and_artifact")
 def retrieve_context(query: str):
     """Retrieve information to help answer a query."""
+    vector_store = get_vector_store()
     retrieved_docs = vector_store.similarity_search(query, k=2)
     serialized = "\n\n".join(
         f"Source: {doc.metadata}\nContent: {doc.page_content}"
@@ -48,7 +57,7 @@ def create_rag_agent():
     return agent
 
 
-def ask_question(query: str) -> str:
+def ask_question(query: str, show_progress: bool = True) -> str:
     """Convenience wrapper: stream to console & return final answer."""
     agent = create_rag_agent()
 
@@ -58,8 +67,9 @@ def ask_question(query: str) -> str:
         stream_mode="values",
     ):
         msg = step["messages"][-1]
-        # Pretty print streaming, like in the docs
-        msg.pretty_print()  # prints Human/AI/Tool messages as they happen
+        # Only show progress if requested (for cleaner output)
+        if show_progress:
+            msg.pretty_print()
         final_answer = msg
 
     # `final_answer` is the last AIMessage in the stream
