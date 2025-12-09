@@ -88,18 +88,42 @@ def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
         print("💾 Building vector store and embedding chunks...", end=" ", flush=True)
 
     # 4) Build vector store and add chunks using the fresh embeddings instance.
-    #    Ollama's embedding endpoint fails with very long payloads, so truncate
-    #    the text we embed while preserving metadata/source.
-    # Keep embeddings payloads small to avoid Ollama EOF on long bodies.
-    # Tighten to 900 chars to reduce noise in retrieval.
-    MAX_CHARS_FOR_EMBED = 900
-    safe_chunks = [
-        Document(
-            page_content=chunk.page_content[:MAX_CHARS_FOR_EMBED],
-            metadata=chunk.metadata,
-        )
-        for chunk in semantic_chunks
-    ]
+    #    Ollama's embedding endpoint fails with very long payloads (>1500 chars).
+    #    Instead of truncating (which loses information), we split long semantic chunks
+    #    into smaller sub-chunks while preserving their semantic structure.
+    #    This way we keep all the information while making it embeddable.
+    MAX_CHARS_FOR_EMBED = 1200  # Safe limit for Ollama embeddings
+    OVERLAP = 100  # Small overlap to preserve context between sub-chunks
+    
+    safe_chunks = []
+    for i, chunk in enumerate(semantic_chunks):
+        text = chunk.page_content
+        
+        # If chunk is small enough, use it as-is
+        if len(text) <= MAX_CHARS_FOR_EMBED:
+            safe_chunks.append(chunk)
+        else:
+            # Split long semantic chunk into smaller sub-chunks with overlap
+            # This preserves all information while making chunks embeddable
+            start = 0
+            sub_chunk_num = 0
+            while start < len(text):
+                end = start + MAX_CHARS_FOR_EMBED
+                sub_text = text[start:end]
+                
+                # Create sub-chunk with metadata indicating it's part of a larger semantic chunk
+                sub_metadata = chunk.metadata.copy()
+                sub_metadata["original_chunk_index"] = i
+                sub_metadata["sub_chunk"] = sub_chunk_num
+                
+                safe_chunks.append(Document(
+                    page_content=sub_text,
+                    metadata=sub_metadata,
+                ))
+                
+                # Move start position with overlap
+                start = end - OVERLAP
+                sub_chunk_num += 1
 
     vector_store = InMemoryVectorStore(vector_store_embeddings)
     vector_store.add_documents(safe_chunks)
