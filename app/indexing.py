@@ -175,12 +175,36 @@ def _process_documents(
         print(f"✂️  Creating {chunk_type} chunks...", end=" ", flush=True)
     
     # Industry standard: RecursiveCharacterTextSplitter for structured documents
-    # Chunk size: 500-1000 chars is optimal for most RAG systems
-    # Overlap: 10-20% helps preserve context across boundaries
+    # For CVs/resumes: Smaller chunks (200-400 chars) enable granular retrieval
+    # For long-form content: Larger chunks (500-800 chars) preserve context
     if not use_semantic:
+        # Detect if this looks like a CV/resume (structured document)
+        # CVs typically have sections, bullet points, and are relatively short
+        is_structured_doc = False
+        if docs:
+            total_chars = sum(len(d.page_content) for d in docs)
+            # CVs are usually 2000-10000 chars, have many newlines, bullet points
+            has_bullets = any('•' in d.page_content or '-' in d.page_content[:500] for d in docs)
+            has_sections = any('\n\n' in d.page_content or d.page_content.count('\n') > 10 for d in docs)
+            is_structured_doc = (total_chars < 15000) and (has_bullets or has_sections)
+        
+        if is_structured_doc:
+            # Smaller chunks for CVs/resumes - enables granular retrieval
+            chunk_size = 300
+            chunk_overlap = 50  # Smaller overlap for smaller chunks
+            doc_type = "CV/resume (structured)"
+        else:
+            # Larger chunks for long-form content
+            chunk_size = 600
+            chunk_overlap = 100
+            doc_type = "long-form content"
+        
+        if show_progress:
+            print(f"  Detected: {doc_type}, using chunk_size={chunk_size}, overlap={chunk_overlap}")
+        
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=800,  # Optimal for most embedding models
-            chunk_overlap=150,  # ~20% overlap for context preservation
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             length_function=len,
             separators=["\n\n", "\n", ". ", " ", ""],  # Try to break at paragraphs, sentences, words
             is_separator_regex=False,
@@ -221,8 +245,10 @@ def _process_documents(
     # Split chunks that are too long for embedding (Ollama limit ~1500 chars)
     # But do it intelligently to avoid tiny fragments
     MAX_CHARS_FOR_EMBED = 1200  # Safe limit for Ollama embeddings
-    MIN_CHARS = 100  # Minimum meaningful chunk size (increased from 50)
-    OVERLAP = 150  # Overlap for sub-chunks
+    # Adjust minimum based on average chunk size
+    avg_chunk_size = sum(len(c.page_content) for c in all_chunks) / len(all_chunks) if all_chunks else 500
+    MIN_CHARS = max(50, int(avg_chunk_size * 0.15))  # 15% of average chunk size, minimum 50
+    OVERLAP = 100  # Overlap for sub-chunks
     
     safe_chunks = []
     for i, chunk in enumerate(all_chunks):
