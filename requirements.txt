@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 pydantic
+python-multipart
+pypdf
 redis
 langchain
 langchain-text-splitters
@@ -10,3 +12,4 @@ langchain-core
 langchain-ollama
 langchain-experimental
 langchain-mcp-adapters
+rank-bm25

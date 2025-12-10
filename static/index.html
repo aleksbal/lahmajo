@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Web UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #e0e0e0;
+            border-radius: 6px;
+            background: #f9f9f9;
+            cursor: pointer;
+        }
+        
+        input[type="file"]:hover {
+            border-color: #667eea;
+            background: #f0f0f0;
+        }
+        
+        input[type="radio"] {
+            cursor: pointer;
+        }
+        
+        label[style*="display: flex"] {
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            transition: border-color 0.3s, background 0.3s;
+        }
+        
+        label[style*="display: flex"]:hover {
+            border-color: #667eea;
+            background: #f9f9f9;
+        }
+        
+        input[type="radio"]:checked + span {
+            color: #667eea;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .answer-area {
+            background: #f9f9f9;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .answer-area:empty::before {
+            content: "Answer will appear here...";
+            color: #999;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .file-list {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 RAG Web UI</h1>
+            <p>Ask questions and ingest documents</p>
+        </div>
+        
+        <div class="content">
+            <!-- Question Section -->
+            <div class="section">
+                <h2>💬 Ask a Question</h2>
+                <div class="form-group">
+                    <label for="question">Your Question:</label>
+                    <input type="text" id="question" placeholder="Enter your question here...">
+                </div>
+                <button id="askBtn" onclick="askQuestion()">Ask Question</button>
+                <div id="askStatus" class="status"></div>
+                <div class="form-group" style="margin-top: 20px;">
+                    <label for="answer">Answer:</label>
+                    <div id="answer" class="answer-area"></div>
+                </div>
+            </div>
+            
+            <!-- Upload Section -->
+            <div class="section">
+                <h2>📄 Ingest Documents</h2>
+                <div class="form-group">
+                    <label for="url">URL (optional):</label>
+                    <input type="text" id="url" placeholder="https://example.com/article">
+                </div>
+                <div class="form-group">
+                    <label for="files">Upload Files (TXT or PDF):</label>
+                    <input type="file" id="files" multiple accept=".txt,.pdf">
+                    <div id="fileList" class="file-list"></div>
+                </div>
+                <div class="form-group">
+                    <label>Chunking Strategy:</label>
+                    <div style="display: flex; gap: 20px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="chunking" value="recursive" checked style="margin-right: 8px;">
+                            <span>
+                                <strong>Recursive</strong> (Recommended for CVs, resumes, structured docs)
+                                <br><small style="color: #666;">Consistent chunks, preserves structure</small>
+                            </span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="chunking" value="semantic" style="margin-right: 8px;">
+                            <span>
+                                <strong>Semantic</strong> (Better for articles, blog posts)
+                                <br><small style="color: #666;">Chunks by meaning, can be unpredictable</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                <button id="ingestBtn" onclick="ingestDocuments()">Ingest Documents</button>
+                <div id="ingestStatus" class="status"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Update file list display
+        document.getElementById('files').addEventListener('change', function(e) {
+            const fileList = document.getElementById('fileList');
+            if (e.target.files.length > 0) {
+                fileList.innerHTML = '<strong>Selected files:</strong><br>' + 
+                    Array.from(e.target.files).map(f => `• ${f.name}`).join('<br>');
+            } else {
+                fileList.innerHTML = '';
+            }
+        });
+        
+        // Ask question
+        async function askQuestion() {
+            const question = document.getElementById('question').value.trim();
+            const answerArea = document.getElementById('answer');
+            const askBtn = document.getElementById('askBtn');
+            const status = document.getElementById('askStatus');
+            
+            if (!question) {
+                showStatus('askStatus', 'Please enter a question', 'error');
+                return;
+            }
+            
+            askBtn.disabled = true;
+            askBtn.innerHTML = '<span class="loading"></span>Processing...';
+            answerArea.textContent = '';
+            status.className = 'status';
+            
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to get answer');
+                }
+                
+                const data = await response.json();
+                answerArea.textContent = data.answer;
+                showStatus('askStatus', 'Question answered successfully!', 'success');
+            } catch (error) {
+                showStatus('askStatus', 'Error: ' + error.message, 'error');
+                answerArea.textContent = 'Error: ' + error.message;
+            } finally {
+                askBtn.disabled = false;
+                askBtn.innerHTML = 'Ask Question';
+            }
+        }
+        
+        // Ingest documents
+        async function ingestDocuments() {
+            const url = document.getElementById('url').value.trim();
+            const files = document.getElementById('files').files;
+            const ingestBtn = document.getElementById('ingestBtn');
+            const status = document.getElementById('ingestStatus');
+            
+            // Get selected chunking strategy
+            const chunkingStrategy = document.querySelector('input[name="chunking"]:checked').value;
+            
+            if (!url && files.length === 0) {
+                showStatus('ingestStatus', 'Please provide a URL or upload at least one file', 'error');
+                return;
+            }
+            
+            ingestBtn.disabled = true;
+            ingestBtn.innerHTML = '<span class="loading"></span>Ingesting...';
+            status.className = 'status';
+            
+            try {
+                const formData = new FormData();
+                if (url) {
+                    formData.append('url', url);
+                }
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('files', files[i]);
+                }
+                formData.append('chunking_strategy', chunkingStrategy);
+                
+                const response = await fetch('/ingest', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to ingest documents');
+                }
+                
+                const data = await response.json();
+                const strategyName = chunkingStrategy === 'recursive' ? 'Recursive' : 'Semantic';
+                showStatus('ingestStatus', 
+                    `${data.message || `Successfully ingested ${data.chunks_added} chunks`} (${strategyName} chunking)`, 
+                    'success');
+                
+                // Clear form
+                document.getElementById('url').value = '';
+                document.getElementById('files').value = '';
+                document.getElementById('fileList').innerHTML = '';
+            } catch (error) {
+                showStatus('ingestStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                ingestBtn.disabled = false;
+                ingestBtn.innerHTML = 'Ingest Documents';
+            }
+        }
+        
+        // Show status message
+        function showStatus(elementId, message, type) {
+            const status = document.getElementById(elementId);
+            status.textContent = message;
+            status.className = `status ${type} show`;
+            setTimeout(() => {
+                status.className = 'status';
+            }, 5000);
+        }
+        
+        // Allow Enter key to submit question
+        document.getElementById('question').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                askQuestion();
+            }
+        });
+    </script>
+</body>
+</html>
