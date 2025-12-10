@@ -18,7 +18,7 @@ def get_vector_store():
     """Get or build the vector store (lazy initialization)."""
     global _vector_store, _all_documents
     if _vector_store is None:
-        _vector_store = build_vector_store(show_progress=True)
+        _vector_store = build_vector_store(show_progress=False)  # Silent initialization
         # Initialize documents list - we'll populate it as documents are added
         _all_documents = []
     return _vector_store
