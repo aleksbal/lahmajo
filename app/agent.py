@@ -57,8 +57,8 @@ def create_rag_agent():
     return agent
 
 
-def ask_question(query: str, show_progress: bool = True) -> str:
-    """Convenience wrapper: stream to console & return final answer."""
+def ask_question(query: str, show_progress: bool = False) -> str:
+    """Ask a question and return the answer."""
     agent = create_rag_agent()
 
     final_answer = None
@@ -67,11 +67,8 @@ def ask_question(query: str, show_progress: bool = True) -> str:
         stream_mode="values",
     ):
         msg = step["messages"][-1]
-        # Only show progress if requested (for cleaner output)
-        if show_progress:
-            msg.pretty_print()
         final_answer = msg
 
-    # `final_answer` is the last AIMessage in the stream
-    return getattr(final_answer, "content", "")
+    content = getattr(final_answer, "content", "")
+    return content.strip() if content else ""
 
