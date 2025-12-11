@@ -177,23 +177,21 @@ lahmajo/
 
 ### Empty Vector Store Initialization
 
-The `build_vector_store()` function creates an **empty** vector store. This is intentional:
-- Users have full control over what content gets ingested
-- No hardcoded documents or URLs
-- Clean, maintainable architecture
+The `build_vector_store()` function creates an **empty** in-memory vector store:
+- Users ingest documents
 
 ### Adaptive Chunking
 
-The system uses intelligent chunking:
+The system uses an adaptive chunking strategy:
 - Automatically detects structured vs unstructured documents
 - Uses appropriate chunk sizes for different document types
-- Intelligently splits long chunks using RecursiveCharacterTextSplitter
+- Uses RecursiveCharacterTextSplitter to split large blocks while preserving context
 - Ensures meaningful chunks are created from the start (no tiny fragments)
 
 ### Industry Standards
 
-The implementation follows industry best practices:
-- **Hybrid Search**: BM25 + Vector (standard in production RAG systems)
+The implementation follows best practices:
+- **Hybrid Search**: BM25 + Vector similarity, a common pattern in production RAG systems
 - **RecursiveCharacterTextSplitter**: Most reliable for structured documents
 - **Chunk sizes**: 200-400 chars for structured docs, 500-800 for long-form
 - **Overlap**: 10-20% for context preservation
