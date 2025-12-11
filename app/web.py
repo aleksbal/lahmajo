@@ -152,10 +152,10 @@ async def ingest_endpoint(
                 if file.filename:
                     # Validate file extension
                     ext = Path(file.filename).suffix.lower()
-                    if ext not in [".txt", ".pdf"]:
+                    if ext not in [".txt", ".pdf", ".md"]:
                         raise HTTPException(
                             status_code=400,
-                            detail=f"Unsupported file type: {ext}. Supported: .txt, .pdf"
+                            detail=f"Unsupported file type: {ext}. Supported: .txt, .pdf, .md"
                         )
                     
                     # Create temp directory only when needed

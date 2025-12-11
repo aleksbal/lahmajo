@@ -219,7 +219,7 @@ def load_from_url(url: str, show_progress: bool = False) -> list[Document]:
 
 
 def load_from_file(file_path: str, show_progress: bool = False) -> list[Document]:
-    """Load documents from a file (txt or PDF)."""
+    """Load documents from a file (txt, PDF, or markdown)."""
     path = Path(file_path)
     
     if show_progress:
@@ -227,10 +227,11 @@ def load_from_file(file_path: str, show_progress: bool = False) -> list[Document
     
     if path.suffix.lower() == ".pdf":
         loader = PyPDFLoader(str(path))
-    elif path.suffix.lower() == ".txt":
+    elif path.suffix.lower() in [".txt", ".md"]:
+        # TextLoader works for both .txt and .md files (markdown is plain text)
         loader = TextLoader(str(path), encoding="utf-8")
     else:
-        raise ValueError(f"Unsupported file type: {path.suffix}. Supported: .txt, .pdf")
+        raise ValueError(f"Unsupported file type: {path.suffix}. Supported: .txt, .pdf, .md")
     
     docs = loader.load()
     
