@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from app.agent import ask_question
+from app.services.rag_service import ask_question
 
 
 def main():

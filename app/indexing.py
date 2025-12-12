@@ -19,10 +19,7 @@ from langchain_ollama import OllamaEmbeddings
 
 def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
     """
-    Initialize an empty vector store with embeddings.
-    
     This creates a clean vector store ready for document ingestion.
-    Users control what content gets added via the ingest endpoint.
     """
     if show_progress:
         print("🔧 Initializing vector store and embeddings...", end=" ", flush=True)
@@ -65,11 +62,11 @@ def _process_documents(
     """
     Process documents into chunks for embedding.
     
-    Industry standard approach:
+    Standard approach:
     - RecursiveCharacterTextSplitter: Most reliable, predictable, works well for structured docs (CVs, resumes)
     - SemanticChunker: Better for long-form content, but can be unpredictable
     
-    For CVs/resumes, RecursiveCharacterTextSplitter is preferred as it:
+    For well structured documents like CVs/resumes, RecursiveCharacterTextSplitter is preferred as it:
     - Preserves section boundaries better
     - Creates consistent chunk sizes
     - Doesn't create tiny fragments
@@ -79,11 +76,11 @@ def _process_documents(
         chunk_type = "semantic" if use_semantic else "recursive character"
         print(f"✂️  Creating {chunk_type} chunks...", end=" ", flush=True)
     
-    # Industry standard: RecursiveCharacterTextSplitter for structured documents
+    # RecursiveCharacterTextSplitter for structured documents
     # For CVs/resumes: Smaller chunks (200-400 chars) enable granular retrieval
     # For long-form content: Larger chunks (500-800 chars) preserve context
     if not use_semantic:
-        # Detect if this looks like a CV/resume (structured document)
+        # Detect if this looks like a well structured document
         # CVs typically have sections, bullet points, and are relatively short
         is_structured_doc = False
         if docs:
