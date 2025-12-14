@@ -1,4 +1,4 @@
-# app/hybrid_search.py
+# lahmajo/search/hybrid_search.py
 """
 Hybrid search implementation combining BM25 (keyword) and Vector (semantic) search.
 This is the industry standard approach for production RAG systems.
@@ -17,7 +17,7 @@ class HybridRetriever:
     """
     Combines BM25 (keyword matching) and Vector (semantic) search.
     
-    Industry standard approach:
+    Standard approach:
     - BM25: Excellent for exact matches, names, keywords
     - Vector: Good for semantic similarity
     - RRF: Combines both effectively

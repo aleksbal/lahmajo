@@ -1,10 +1,10 @@
-# app/services/rag_service.py
+# lahmajo/services/rag_service.py
 """RAG service - orchestrates the RAG agent for question answering."""
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_ollama import ChatOllama
 
-from app.services.retrieval_service import retrieve_context
+from lahmajo.services.retrieval_service import retrieve_context
 
 
 @tool(response_format="content_and_artifact")

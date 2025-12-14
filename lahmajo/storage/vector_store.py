@@ -1,10 +1,10 @@
-# app/core/vector_store.py
+# lahmajo/storage/vector_store.py
 """Vector store management and state."""
 from typing import List, Optional
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
 
-from app.indexing import build_vector_store
+from lahmajo.storage.indexing import build_vector_store
 
 
 # Lazy initialization - build vector store only when first needed

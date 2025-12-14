@@ -1,4 +1,4 @@
-# app/services/ingestion_service.py
+# lahmajo/services/ingestion_service.py
 """Ingestion service - handles document ingestion workflow."""
 import os
 import tempfile
@@ -7,8 +7,8 @@ from typing import Optional, List, Tuple
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
 
-from app.core.vector_store import get_vector_store, add_documents
-from app.indexing import ingest_documents
+from lahmajo.storage.vector_store import get_vector_store, add_documents
+from lahmajo.storage.indexing import ingest_documents
 
 
 def ingest_documents_from_files(

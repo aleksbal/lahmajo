@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch, MagicMock
 from langchain_core.documents import Document
 
-from app.services.retrieval_service import retrieve_context
-from app.core.vector_store import add_documents, reset_vector_store
+from lahmajo.services.retrieval_service import retrieve_context
+from lahmajo.storage.vector_store import add_documents, reset_vector_store
 
 
 class TestRetrievalService(unittest.TestCase):
@@ -15,7 +15,7 @@ class TestRetrievalService(unittest.TestCase):
         """Reset state before each test."""
         reset_vector_store()
     
-    @patch('app.services.retrieval_service.get_vector_store')
+    @patch('lahmajo.services.retrieval_service.get_vector_store')
     def test_retrieve_context_no_documents(self, mock_get_store):
         """Test retrieval when no documents are indexed."""
         mock_store = MagicMock()
@@ -27,8 +27,8 @@ class TestRetrievalService(unittest.TestCase):
         self.assertEqual(serialized, "No relevant documents found in the knowledge base for this query.")
         self.assertEqual(docs, [])
     
-    @patch('app.services.retrieval_service.HybridRetriever')
-    @patch('app.services.retrieval_service.get_vector_store')
+    @patch('lahmajo.services.retrieval_service.HybridRetriever')
+    @patch('lahmajo.services.retrieval_service.get_vector_store')
     def test_retrieve_context_with_documents(self, mock_get_store, mock_hybrid_class):
         """Test retrieval with documents using hybrid search."""
         # Setup mocks

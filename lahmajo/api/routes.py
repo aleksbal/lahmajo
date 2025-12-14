@@ -1,4 +1,4 @@
-# app/api/routes.py
+# lahmajo/api/routes.py
 """FastAPI routes - API endpoints only."""
 import logging
 from pathlib import Path
@@ -8,14 +8,14 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.services.rag_service import ask_question
-from app.services.ingestion_service import (
+from lahmajo.services.rag_service import ask_question
+from lahmajo.services.ingestion_service import (
     ingest_documents_from_files,
     save_uploaded_files,
     cleanup_temp_files
 )
-from app.core.vector_store import get_vector_store, get_all_documents
-from app.hybrid_search import HybridRetriever
+from lahmajo.storage.vector_store import get_vector_store, get_all_documents
+from lahmajo.search.hybrid_search import HybridRetriever
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

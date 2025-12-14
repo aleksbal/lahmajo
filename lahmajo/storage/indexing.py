@@ -1,4 +1,4 @@
-# app/indexing.py
+# lahmajo/storage/indexing.py
 import bs4
 import os
 from pathlib import Path
@@ -24,14 +24,14 @@ def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
     if show_progress:
         print("🔧 Initializing vector store and embeddings...", end=" ", flush=True)
     
-    # Create embeddings instance for the vector store
-    vector_store_embeddings = OllamaEmbeddings(
+    # Create embedding model for embedding documents into the vector store
+    document_embedding_model = OllamaEmbeddings(
         model="nomic-embed-text",
         base_url="http://127.0.0.1:11434",
     )
     
-    # Create empty vector store
-    vector_store = InMemoryVectorStore(vector_store_embeddings)
+    # Create empty vector store with the embedding model
+    vector_store = InMemoryVectorStore(document_embedding_model)
     
     if show_progress:
         print("✓")
@@ -40,22 +40,23 @@ def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
     return vector_store
 
 
-def _get_embeddings():
-    """Get embeddings instance for chunking and vector store."""
-    chunking_embeddings = OllamaEmbeddings(
+def _get_semantic_chunker_embeddings():
+    """
+    Get embedding model for semantic chunking analysis.
+    
+    Returns:
+        OllamaEmbeddings instance used by SemanticChunker to find semantic breakpoints
+        in text (determines where to split documents based on meaning).
+    """
+    return OllamaEmbeddings(
         model="nomic-embed-text",
         base_url="http://127.0.0.1:11434",
     )
-    vector_store_embeddings = OllamaEmbeddings(
-        model="nomic-embed-text",
-        base_url="http://127.0.0.1:11434",
-    )
-    return chunking_embeddings, vector_store_embeddings
 
 
 def _process_documents(
     docs: list[Document], 
-    chunking_embeddings=None, 
+    semantic_chunker_embeddings=None, 
     use_semantic: bool = False,
     show_progress: bool = False
 ) -> list[Document]:
@@ -113,10 +114,11 @@ def _process_documents(
         )
     else:
         # Semantic chunking for long-form content (experimental)
-        if chunking_embeddings is None:
-            chunking_embeddings, _ = _get_embeddings()
+        # Uses embeddings to analyze text and find semantic breakpoints
+        if semantic_chunker_embeddings is None:
+            semantic_chunker_embeddings = _get_semantic_chunker_embeddings()
         text_splitter = SemanticChunker(
-            chunking_embeddings,
+            semantic_chunker_embeddings,
             breakpoint_threshold_type="percentile",
             breakpoint_threshold_amount=85,  # Lower threshold = more chunks, fewer tiny fragments
             min_chunk_size=300,  # Minimum chunk size

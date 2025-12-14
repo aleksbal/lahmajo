@@ -6,7 +6,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from app.services.ingestion_service import (
+from lahmajo.services.ingestion_service import (
     save_uploaded_files,
     cleanup_temp_files
 )

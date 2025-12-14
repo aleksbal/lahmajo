@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 
-from app.core.vector_store import (
+from lahmajo.storage.vector_store import (
     get_vector_store,
     get_all_documents,
     add_documents,
@@ -19,7 +19,7 @@ class TestVectorStore(unittest.TestCase):
         """Reset state before each test."""
         reset_vector_store()
     
-    @patch('app.core.vector_store.build_vector_store')
+    @patch('lahmajo.storage.vector_store.build_vector_store')
     def test_get_vector_store_lazy_init(self, mock_build):
         """Test that vector store is initialized lazily."""
         mock_store = MagicMock()

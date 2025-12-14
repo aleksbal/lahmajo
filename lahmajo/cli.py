@@ -1,8 +1,9 @@
-# rag_ollama_demo/cli.py
+# lahmajo/cli.py
+"""CLI interface for RAG system."""
 import argparse
 import sys
 
-from app.services.rag_service import ask_question
+from lahmajo.services.rag_service import ask_question
 
 
 def main():

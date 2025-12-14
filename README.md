@@ -85,9 +85,13 @@ ollama serve
 Start the web server:
 
 ```bash
-python -m app.web
-# or
-uvicorn app.web:app --host 0.0.0.0 --port 8000
+python main.py
+```
+
+Or using uvicorn directly:
+
+```bash
+uvicorn lahmajo.api.routes:app --host 0.0.0.0 --port 8000
 ```
 
 Then open `http://localhost:8000` in your browser.
@@ -102,13 +106,13 @@ Then open `http://localhost:8000` in your browser.
 Run the CLI for interactive Q&A:
 
 ```bash
-python -m app.cli
+python cli.py
 ```
 
 Or ask a single question:
 
 ```bash
-python -m app.cli "What information do you have about me?"
+python cli.py "What information do you have about me?"
 ```
 
 ### API Endpoints
@@ -160,13 +164,19 @@ Hybrid search solves this by:
 
 ```
 lahmajo/
-├── app/
-│   ├── agent.py          # RAG agent with hybrid search retrieval
-│   ├── cli.py            # Command-line interface
-│   ├── hybrid_search.py  # BM25 + Vector hybrid search implementation
-│   ├── indexing.py       # Document loading, chunking, and ingestion
-│   ├── web.py            # FastAPI web server and endpoints
-│   └── main.py           # Legacy Ollama proxy (separate functionality)
+├── lahmajo/
+│   ├── api/
+│   │   └── routes.py     # FastAPI web server and endpoints
+│   ├── services/
+│   │   ├── rag_service.py        # RAG agent orchestration
+│   │   ├── retrieval_service.py  # Document retrieval
+│   │   └── ingestion_service.py  # Document ingestion
+│   ├── storage/
+│   │   ├── vector_store.py  # Vector store management
+│   │   └── indexing.py       # Document loading and chunking
+│   ├── search/
+│   │   └── hybrid_search.py  # BM25 + Vector hybrid search
+│   └── cli.py            # Command-line interface
 ├── static/
 │   └── index.html        # Web UI (single-page application)
 ├── requirements.txt      # Python dependencies
@@ -219,14 +229,14 @@ The implementation follows best practices:
 
 ### Adding New File Types
 
-1. Add loader import in `app/indexing.py`
+1. Add loader import in `lahmajo/storage/indexing.py`
 2. Add file extension check in `load_from_file()`
-3. Update validation in `app/web.py`
+3. Update validation in `lahmajo/api/routes.py`
 4. Update HTML file input `accept` attribute
 
 ### Modifying Chunking
 
-Edit `_process_documents()` in `app/indexing.py`:
+Edit `_process_documents()` in `lahmajo/storage/indexing.py`:
 - Adjust chunk sizes for different document types
 - Modify detection logic for structured vs long-form documents
 - Change chunking strategy parameters

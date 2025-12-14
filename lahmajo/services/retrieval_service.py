@@ -1,11 +1,11 @@
-# app/services/retrieval_service.py
+# lahmajo/services/retrieval_service.py
 """Retrieval service - handles document retrieval using hybrid search."""
 import logging
 from typing import List, Tuple
 from langchain_core.documents import Document
 
-from app.core.vector_store import get_vector_store, get_all_documents
-from app.hybrid_search import HybridRetriever
+from lahmajo.storage.vector_store import get_vector_store, get_all_documents
+from lahmajo.search.hybrid_search import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
