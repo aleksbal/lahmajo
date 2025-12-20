@@ -28,7 +28,7 @@ def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
     # Create embedding model for embedding documents into the vector store
     # Explicitly set base_url to ensure correct Ollama connection
     document_embedding_model = OllamaEmbeddings(
-        model="nomic-embed-text",
+        model="embeddinggemma",
         base_url="http://127.0.0.1:11434",
     )
     
@@ -77,7 +77,7 @@ def _get_semantic_chunker_embeddings():
     # Use the same embedding model configuration as the vector store
     # This ensures consistency and proper base_url configuration
     return OllamaEmbeddings(
-        model="nomic-embed-text",
+        model="embeddinggemma",
         base_url="http://127.0.0.1:11434",
     )
 

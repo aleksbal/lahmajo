@@ -19,9 +19,9 @@ def retrieve_context_tool(query: str):
 
 def create_rag_agent():
     """Create a RAG agent with retrieval tool."""
-    # Local Ollama chat model
+    # Ollama chat model (local or in cloud if installed locally)
     model = ChatOllama(
-        model="mistral",  # or llama3
+        model="gpt-oss:120b-cloud",  # or llama3
         temperature=0.1,
         base_url="http://127.0.0.1:11434",
     )
@@ -29,11 +29,18 @@ def create_rag_agent():
     tools = [retrieve_context_tool]
 
     system_prompt = (
-        "You have access to a tool that retrieves context from a knowledge base containing documents. "
-        "ALWAYS use the retrieve_context tool FIRST to search for relevant information before answering any question. "
-        "Only answer based on the retrieved context. "
-        "If the tool does not return helpful context, say so explicitly. "
-        "Do not make up information or use your training data - only use information from the retrieved context."
+        """
+        You are an assistant with access to a retrieval tool that can fetch relevant excerpts from a knowledge base.
+
+        When the user’s question is about specific documents, facts, procedures, or project-specific information, call retrieve_context first.
+        When the user’s question is general (small talk, generic explanations, brainstorming, or purely mathematical reasoning), 
+        you may answer without retrieval.
+        
+        Use the retrieved context as the source of truth. Do not introduce factual claims that are not supported by the retrieved context.
+        If the context is missing, unclear, or conflicting, say so and ask a targeted follow-up question or explain what cannot be determined.
+        
+        In your answer, quote or cite which retrieved excerpt(s) you used (e.g., [source 1], [source 2]).
+        """
     )
 
     agent = create_agent(
