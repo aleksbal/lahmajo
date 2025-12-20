@@ -1,6 +1,6 @@
-# Lahmajo - RAG System with Hybrid Document Search
+# Lahmajo - RAG with Hybrid Document Search
 
-Experimental Retrieval-Augmented Generation (RAG) system with Web UI interfaces for testing, experimenting and prototyping. Currently, the project uses local (or cloud) Ollama for LLM inference and implements standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
+Experimental Retrieval-Augmented Generation (RAG) project with Web UI interfaces for testing, experimenting and prototyping. Currently, the project uses local (or cloud) Ollama for LLM inference and implements standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
 
 ## Features
 
