@@ -70,12 +70,13 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
     # Take top k
     top_docs = filtered_docs[:k]
     
-    # Debug logging
+    # Debug logging - clarify chunks vs documents
     logger.info(f"Retrieval query: {query}")
-    logger.info(f"Retrieved {len(top_docs)} documents")
-    for i, doc in enumerate(top_docs[:5]):
-        logger.info(f"Doc {i+1} source: {doc.metadata.get('source', 'unknown')}")
-        logger.info(f"Doc {i+1} preview: {doc.page_content[:100]}...")
+    logger.info(f"Retrieved {len(top_docs)} chunks (from {len(set(doc.metadata.get('source', 'unknown') for doc in top_docs))} unique document(s))")
+    for i, doc in enumerate(top_docs):
+        source = doc.metadata.get('source', 'unknown')
+        chunk_length = len(doc.page_content)
+        logger.info(f"Chunk {i+1}/{len(top_docs)}: source='{source}', length={chunk_length} chars, preview: {doc.page_content[:100]}...")
     
     # If no results, return a message indicating no context found
     if not top_docs:

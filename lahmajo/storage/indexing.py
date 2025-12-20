@@ -1,6 +1,7 @@
 # lahmajo/storage/indexing.py
 import bs4
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -25,10 +26,35 @@ def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
         print("🔧 Initializing vector store and embeddings...", end=" ", flush=True)
     
     # Create embedding model for embedding documents into the vector store
+    # Explicitly set base_url to ensure correct Ollama connection
     document_embedding_model = OllamaEmbeddings(
         model="nomic-embed-text",
         base_url="http://127.0.0.1:11434",
     )
+    
+    # Verify the embedding model is properly configured
+    # Test the embedding connection by embedding a small test string
+    try:
+        test_embedding = document_embedding_model.embed_query("test")
+        if show_progress:
+            print(f"✓ (embedding dim: {len(test_embedding)})")
+    except Exception as e:
+        if show_progress:
+            print(f"✗")
+        error_msg = str(e)
+        # Check if the error mentions a wrong port
+        if "63480" in error_msg or "63480" in str(e):
+            raise ConnectionError(
+                f"Embedding connection error - wrong port detected. "
+                f"This may indicate a configuration issue with OllamaEmbeddings. "
+                f"Expected base_url: http://127.0.0.1:11434. "
+                f"Error: {error_msg}"
+            )
+        raise ConnectionError(
+            f"Failed to connect to Ollama embeddings at http://127.0.0.1:11434. "
+            f"Please ensure Ollama is running: 'ollama serve' and the 'nomic-embed-text' model is available: 'ollama pull nomic-embed-text'. "
+            f"Error: {error_msg}"
+        )
     
     # Create empty vector store with the embedding model
     vector_store = InMemoryVectorStore(document_embedding_model)
@@ -36,7 +62,7 @@ def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
     if show_progress:
         print("✓")
         print("✅ Vector store initialized (empty, ready for document ingestion)\n")
-
+    
     return vector_store
 
 
@@ -48,6 +74,8 @@ def _get_semantic_chunker_embeddings():
         OllamaEmbeddings instance used by SemanticChunker to find semantic breakpoints
         in text (determines where to split documents based on meaning).
     """
+    # Use the same embedding model configuration as the vector store
+    # This ensures consistency and proper base_url configuration
     return OllamaEmbeddings(
         model="nomic-embed-text",
         base_url="http://127.0.0.1:11434",
@@ -273,7 +301,7 @@ def ingest_documents(
             all_docs.extend(docs)
     
     if not all_docs:
-        return 0
+        return 0, []
     
     # Process documents into chunks
     # use_semantic=False: RecursiveCharacterTextSplitter (better for structured docs like CVs)
@@ -284,14 +312,95 @@ def ingest_documents(
         show_progress=show_progress
     )
     
-    # Add to vector store
+    # Add to vector store one chunk at a time with retries
+    # Ollama can be overwhelmed even with small batches, so process sequentially
     if show_progress:
-        print("💾 Adding chunks to vector store...", end=" ", flush=True)
+        print(f"💾 Adding {len(safe_chunks)} chunks to vector store...", end=" ", flush=True)
     
-    vector_store.add_documents(safe_chunks)
+    # Ensure the vector store's embedding model is properly configured
+    if hasattr(vector_store, 'embeddings') and hasattr(vector_store.embeddings, 'base_url'):
+        if vector_store.embeddings.base_url != "http://127.0.0.1:11434":
+            raise ValueError(
+                f"Vector store embedding model has incorrect base_url: {vector_store.embeddings.base_url}. "
+                f"Expected: http://127.0.0.1:11434"
+            )
+    
+    # Process chunks one at a time with retry logic
+    # This prevents overwhelming Ollama and handles transient connection errors
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.0  # seconds between retries
+    CHUNK_DELAY = 0.1  # small delay between chunks to avoid overwhelming Ollama
+    
+    total_added = 0
+    failed_chunks = []
+    
+    for i, chunk in enumerate(safe_chunks):
+        retry_count = 0
+        success = False
+        
+        while retry_count < MAX_RETRIES and not success:
+            try:
+                # Add single chunk
+                vector_store.add_documents([chunk])
+                total_added += 1
+                success = True
+                
+                # Small delay between chunks to avoid overwhelming Ollama
+                if i < len(safe_chunks) - 1:  # Don't delay after last chunk
+                    time.sleep(CHUNK_DELAY)
+                
+                # Show progress for large files
+                if show_progress and len(safe_chunks) > 10:
+                    progress = min(100, int((total_added / len(safe_chunks)) * 100))
+                    print(f"\r💾 Adding chunks... {total_added}/{len(safe_chunks)} ({progress}%)", end="", flush=True)
+                    
+            except Exception as chunk_error:
+                retry_count += 1
+                error_msg = str(chunk_error)
+                
+                # Check for connection errors
+                if "EOF" in error_msg or "500" in error_msg or "embedding" in error_msg.lower():
+                    if retry_count < MAX_RETRIES:
+                        # Exponential backoff: wait longer on each retry
+                        wait_time = RETRY_DELAY * (2 ** (retry_count - 1))
+                        if show_progress:
+                            print(f"\r💾 Retrying chunk {i+1}/{len(safe_chunks)} (attempt {retry_count + 1}/{MAX_RETRIES})...", end="", flush=True)
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # Max retries reached, mark as failed
+                        failed_chunks.append((i, chunk, error_msg))
+                        if show_progress:
+                            print(f"\r⚠️  Failed to embed chunk {i+1}/{len(safe_chunks)} after {MAX_RETRIES} retries", flush=True)
+                        break
+                else:
+                    # Non-retryable error, fail immediately
+                    raise RuntimeError(
+                        f"Error embedding chunk {i+1}/{len(safe_chunks)}: {error_msg}"
+                    )
+        
+        if not success:
+            # Continue with next chunk even if this one failed
+            continue
     
     if show_progress:
-        print(f"✓ ({len(safe_chunks)} chunks added)")
+        if len(safe_chunks) > 10:
+            print(f"\r💾 Added {total_added}/{len(safe_chunks)} chunks to vector store", end="", flush=True)
+        print(f" ✓", flush=True)
+    
+    # Report any failed chunks
+    if failed_chunks:
+        failed_count = len(failed_chunks)
+        if show_progress:
+            print(f"⚠️  Warning: {failed_count} chunks failed to embed after retries", flush=True)
+        # For now, we continue - the successfully embedded chunks are still useful
+        # In the future, we could log these or retry them separately
+    
+    if total_added == 0:
+        raise RuntimeError(
+            f"Failed to embed any chunks. All {len(safe_chunks)} chunks failed. "
+            f"Please check Ollama is running and the 'nomic-embed-text' model is available."
+        )
     
     # Return both count and documents for hybrid search indexing
     return len(safe_chunks), safe_chunks

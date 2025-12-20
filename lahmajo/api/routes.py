@@ -125,6 +125,47 @@ async def debug_search(query: str, use_hybrid: bool = True):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+@app.get("/documents")
+async def get_documents():
+    """Get all ingested documents grouped by source."""
+    try:
+        all_docs = get_all_documents()
+        
+        # Group documents by source
+        documents_by_source = {}
+        for doc in all_docs:
+            source = doc.metadata.get("source", "unknown")
+            if source not in documents_by_source:
+                documents_by_source[source] = {
+                    "source": source,
+                    "chunks": [],
+                    "total_chunks": 0,
+                    "total_chars": 0
+                }
+            
+            chunk_length = len(doc.page_content)
+            documents_by_source[source]["chunks"].append({
+                "length": chunk_length,
+                "preview": doc.page_content[:100] + "..." if len(doc.page_content) > 100 else doc.page_content
+            })
+            documents_by_source[source]["total_chunks"] += 1
+            documents_by_source[source]["total_chars"] += chunk_length
+        
+        # Convert to list and sort by source name
+        documents_list = list(documents_by_source.values())
+        documents_list.sort(key=lambda x: x["source"])
+        
+        return JSONResponse({
+            "status": "success",
+            "total_documents": len(documents_list),
+            "total_chunks": len(all_docs),
+            "documents": documents_list
+        })
+    except Exception as e:
+        logging.error(f"Error getting documents: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting documents: {str(e)}")
+
+
 @app.post("/ingest")
 async def ingest_endpoint(
     url: Optional[str] = Form(None),
