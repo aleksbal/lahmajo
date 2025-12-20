@@ -85,7 +85,7 @@ ollama serve
 Start the web server:
 
 ```bash
-python main.py
+python -m lahmajo.api.routes
 ```
 
 Or using uvicorn directly:
@@ -100,20 +100,6 @@ Then open `http://localhost:8000` in your browser.
 - **Ingest Documents**: Upload TXT, PDF, or MD files, or provide URLs
 - **Choose Chunking Strategy**: Select Recursive (structured docs) or Semantic (long-form) chunking
 - **Ask Questions**: Query the knowledge base and get answers based on retrieved context
-
-### CLI Interface
-
-Run the CLI for interactive Q&A:
-
-```bash
-python cli.py
-```
-
-Or ask a single question:
-
-```bash
-python cli.py "What information do you have about me?"
-```
 
 ### API Endpoints
 
