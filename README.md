@@ -1,6 +1,6 @@
-# Lahmajo - RAG System with Hybrid Search
+# Lahmajo - RAG System with Hybrid Document Search
 
-A production-ready Retrieval-Augmented Generation (RAG) system with both CLI and Web UI interfaces. The system uses Ollama for local LLM inference and implements industry-standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
+Experimental Retrieval-Augmented Generation (RAG) system with Web UI interfaces for testing, experimenting and prototyping. Currently, the project uses local (or cloud) Ollama for LLM inference and implements standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
 
 ## Features
 
@@ -14,9 +14,9 @@ A production-ready Retrieval-Augmented Generation (RAG) system with both CLI and
 
 ## Architecture
 
-### Hybrid Search (Industry Standard)
+### Hybrid Search
 
-The system uses **hybrid search**, which is the industry standard approach for production RAG systems:
+The system uses **hybrid search**, which is the standard approach for production RAG systems:
 
 - **BM25 (Keyword Matching)**: Excellent for exact matches, names, keywords
 - **Vector Search (Semantic)**: Good for semantic similarity and understanding
@@ -198,48 +198,107 @@ The system uses an adaptive chunking strategy:
 - Uses RecursiveCharacterTextSplitter to split large blocks while preserving context
 - Ensures meaningful chunks are created from the start (no tiny fragments)
 
-### Industry Standards
+### Details
 
-The implementation follows best practices:
+The implementation follows hybrid search approach:
 - **Hybrid Search**: BM25 + Vector similarity, a common pattern in production RAG systems
 - **RecursiveCharacterTextSplitter**: Most reliable for structured documents
 - **Chunk sizes**: 200-400 chars for structured docs, 500-800 for long-form
 - **Overlap**: 10-20% for context preservation
 - **Filtering**: Only filters chunks < 100 chars (safety check, not workaround)
 
-## Troubleshooting
+### Architecture
 
-### Vector Search Returns Irrelevant Results
+```
+┌─────────────────┐
+│   API Layer     │  FastAPI routes (lahmajo/api/routes.py)
+│  (Endpoints)    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Service Layer  │  Business logic (lahmajo/services/)
+│ (Orchestration) │  - rag_service.py
+└────────┬────────┘  - retrieval_service.py
+         │           - ingestion_service.py
+         ▼
+┌─────────────────┐
+│  Storage Layer  │  Data storage (lahmajo/storage/)
+│  (Persistence)  │  - vector_store.py
+└────────┬────────┘  - indexing.py
+         │
+         ▼
+┌─────────────────┐
+│  Search Layer   │  Search algorithms (lahmajo/search/)
+│  (Retrieval)    │  - hybrid_search.py
+└─────────────────┘
+```
 
-- **Solution**: The system uses hybrid search by default. Ensure documents are properly indexed for BM25.
-- **Check**: Use `/debug/search?query=...` to see what's being retrieved
+## Layer Details
 
-### Too Few Chunks Created
+### API Layer (`lahmajo/api/`)
+**Responsibility**: HTTP interface only
+- Route handlers
+- Request/response validation
+- Error handling
+- **No business logic**
 
-- **Problem**: Chunk size might be too large
-- **Solution**: System auto-detects structured documents and uses 300-char chunks. For unstructured documents, try semantic chunking.
+**Files**:
+- `routes.py` - All FastAPI endpoints
 
-### Documents Not Found in Search
+### Service Layer (`lahmajo/services/`)
+**Responsibility**: Business logic orchestration
+- Coordinates between API, Storage, and Search layers
+- Implements use cases
+- **No direct data access**
 
-- **Check**: Verify documents were successfully ingested (check logs)
-- **Try**: Use hybrid search (default) which combines keyword and semantic matching
-- **Debug**: Use `/debug/search` endpoint to test retrieval directly
+**Files**:
+- `rag_service.py` - RAG agent creation and question answering
+- `retrieval_service.py` - Document retrieval operations
+- `ingestion_service.py` - Document ingestion workflow
 
-## Development
+### Storage Layer (`lahmajo/storage/`)
+**Responsibility**: Data storage and management
+- Vector store management
+- Document processing and chunking
+- **No business logic**
 
-### Adding New File Types
+**Files**:
+- `vector_store.py` - Vector store singleton
+- `indexing.py` - Document loading and chunking
 
-1. Add loader import in `lahmajo/storage/indexing.py`
-2. Add file extension check in `load_from_file()`
-3. Update validation in `lahmajo/api/routes.py`
-4. Update HTML file input `accept` attribute
+### Search Layer (`lahmajo/search/`)
+**Responsibility**: Search algorithms
+- Hybrid search implementation
+- **No business logic**
 
-### Modifying Chunking
+**Files**:
+- `hybrid_search.py` - BM25 + Vector search
 
-Edit `_process_documents()` in `lahmajo/storage/indexing.py`:
-- Adjust chunk sizes for different document types
-- Modify detection logic for structured vs long-form documents
-- Change chunking strategy parameters
+## Data Flow
+
+### Question Answering
+```
+User → API (routes.py) 
+     → Service (rag_service.py)
+     → Service (retrieval_service.py)
+     → Storage (vector_store.py)
+     → Search (hybrid_search.py)
+     → Service (rag_service.py)
+     → API (routes.py)
+     → User
+```
+
+### Document Ingestion
+```
+User → API (routes.py)
+     → Service (ingestion_service.py)
+     → Storage (indexing.py)
+     → Storage (vector_store.py)
+     → Service (ingestion_service.py)
+     → API (routes.py)
+     → User
+```
 
 ## License
 
