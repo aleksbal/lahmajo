@@ -11,59 +11,49 @@ if "USER_AGENT" not in os.environ:
     os.environ["USER_AGENT"] = "Mozilla/5.0"
 
 from langchain_community.document_loaders import WebBaseLoader, TextLoader, PyPDFLoader
-from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
+
+from lahmajo.llm import get_embeddings
+from lahmajo.storage.vector_index_provider import get_vector_index_provider, VectorIndexProvider
 
 
-def build_vector_store(show_progress: bool = True) -> InMemoryVectorStore:
+def build_vector_store(show_progress: bool = True) -> VectorIndexProvider:
     """
     This creates a clean vector store ready for document ingestion.
     """
     if show_progress:
-        print("🔧 Initializing vector store and embeddings...", end=" ", flush=True)
+        print("🔧 Initializing vector index and embeddings...", end=" ", flush=True)
     
-    # Create embedding model for embedding documents into the vector store
-    # Explicitly set base_url to ensure correct Ollama connection
-    document_embedding_model = OllamaEmbeddings(
-        model="embeddinggemma",
-        base_url="http://127.0.0.1:11434",
-    )
+    # Get vector index provider (configurable via environment variables)
+    vector_index = get_vector_index_provider()
     
     # Verify the embedding model is properly configured
     # Test the embedding connection by embedding a small test string
+    # Note: The provider initializes its own embeddings, but we test here for early error detection
     try:
-        test_embedding = document_embedding_model.embed_query("test")
+        from lahmajo.llm import get_embeddings
+        test_embeddings = get_embeddings()
+        test_embedding = test_embeddings.embed_query("test")
         if show_progress:
             print(f"✓ (embedding dim: {len(test_embedding)})")
     except Exception as e:
         if show_progress:
             print(f"✗")
         error_msg = str(e)
-        # Check if the error mentions a wrong port
-        if "63480" in error_msg or "63480" in str(e):
-            raise ConnectionError(
-                f"Embedding connection error - wrong port detected. "
-                f"This may indicate a configuration issue with OllamaEmbeddings. "
-                f"Expected base_url: http://127.0.0.1:11434. "
-                f"Error: {error_msg}"
-            )
         raise ConnectionError(
-            f"Failed to connect to Ollama embeddings at http://127.0.0.1:11434. "
-            f"Please ensure Ollama is running: 'ollama serve' and the 'nomic-embed-text' model is available: 'ollama pull nomic-embed-text'. "
+            f"Failed to connect to embeddings provider. "
+            f"Please check your embedding provider configuration (EMBEDDING_PROVIDER environment variable). "
+            f"For Ollama: ensure Ollama is running: 'ollama serve' and the embedding model is available. "
             f"Error: {error_msg}"
         )
     
-    # Create empty vector store with the embedding model
-    vector_store = InMemoryVectorStore(document_embedding_model)
-    
     if show_progress:
         print("✓")
-        print("✅ Vector store initialized (empty, ready for document ingestion)\n")
+        print("✅ Vector index initialized (empty, ready for document ingestion)\n")
     
-    return vector_store
+    return vector_index
 
 
 def _get_semantic_chunker_embeddings():
@@ -71,15 +61,12 @@ def _get_semantic_chunker_embeddings():
     Get embedding model for semantic chunking analysis.
     
     Returns:
-        OllamaEmbeddings instance used by SemanticChunker to find semantic breakpoints
+        Embeddings instance used by SemanticChunker to find semantic breakpoints
         in text (determines where to split documents based on meaning).
     """
     # Use the same embedding model configuration as the vector store
-    # This ensures consistency and proper base_url configuration
-    return OllamaEmbeddings(
-        model="embeddinggemma",
-        base_url="http://127.0.0.1:11434",
-    )
+    # This ensures consistency across the system
+    return get_embeddings()
 
 
 def _process_documents(
@@ -278,7 +265,7 @@ def load_from_file(file_path: str, show_progress: bool = False) -> list[Document
 
 
 def ingest_documents(
-    vector_store: InMemoryVectorStore,
+    vector_index: VectorIndexProvider,
     urls: Optional[list[str]] = None,
     file_paths: Optional[list[str]] = None,
     use_semantic: bool = False,
@@ -312,18 +299,10 @@ def ingest_documents(
         show_progress=show_progress
     )
     
-    # Add to vector store one chunk at a time with retries
+    # Add to vector index one chunk at a time with retries
     # Ollama can be overwhelmed even with small batches, so process sequentially
     if show_progress:
-        print(f"💾 Adding {len(safe_chunks)} chunks to vector store...", end=" ", flush=True)
-    
-    # Ensure the vector store's embedding model is properly configured
-    if hasattr(vector_store, 'embeddings') and hasattr(vector_store.embeddings, 'base_url'):
-        if vector_store.embeddings.base_url != "http://127.0.0.1:11434":
-            raise ValueError(
-                f"Vector store embedding model has incorrect base_url: {vector_store.embeddings.base_url}. "
-                f"Expected: http://127.0.0.1:11434"
-            )
+        print(f"💾 Adding {len(safe_chunks)} chunks to vector index...", end=" ", flush=True)
     
     # Process chunks one at a time with retry logic
     # This prevents overwhelming Ollama and handles transient connection errors
@@ -341,7 +320,7 @@ def ingest_documents(
         while retry_count < MAX_RETRIES and not success:
             try:
                 # Add single chunk
-                vector_store.add_documents([chunk])
+                vector_index.add_documents([chunk])
                 total_added += 1
                 success = True
                 
@@ -399,7 +378,7 @@ def ingest_documents(
     if total_added == 0:
         raise RuntimeError(
             f"Failed to embed any chunks. All {len(safe_chunks)} chunks failed. "
-            f"Please check Ollama is running and the 'nomic-embed-text' model is available."
+            f"Please check your embedding provider configuration and ensure it's accessible."
         )
     
     # Return both count and documents for hybrid search indexing

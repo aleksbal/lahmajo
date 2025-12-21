@@ -71,6 +71,8 @@ async def debug_search(query: str, use_hybrid: bool = True):
         # Use hybrid search if available and requested
         if use_hybrid and all_docs and len(all_docs) > 0:
             try:
+                # Both vector_store and BM25 are indexes - vector_store is the semantic index,
+                # and BM25 index is created from the provider factory
                 hybrid_retriever = HybridRetriever(vector_store, all_docs)
                 query_lower = query.lower()
                 is_name_query = any(word.isupper() or len(word) > 8 for word in query.split())

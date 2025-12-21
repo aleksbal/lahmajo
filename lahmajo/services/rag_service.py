@@ -2,8 +2,8 @@
 """RAG service - orchestrates the RAG agent for question answering."""
 from langchain.agents import create_agent
 from langchain.tools import tool
-from langchain_ollama import ChatOllama
 
+from lahmajo.llm import get_llm
 from lahmajo.services.retrieval_service import retrieve_context
 
 
@@ -19,12 +19,8 @@ def retrieve_context_tool(query: str):
 
 def create_rag_agent():
     """Create a RAG agent with retrieval tool."""
-    # Ollama chat model (local or in cloud if installed locally)
-    model = ChatOllama(
-        model="gpt-oss:120b-cloud",  # or llama3
-        temperature=0.1,
-        base_url="http://127.0.0.1:11434",
-    )
+    # Get LLM from provider factory (configurable via environment variables)
+    model = get_llm()
 
     tools = [retrieve_context_tool]
 

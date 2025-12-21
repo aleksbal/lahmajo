@@ -28,6 +28,8 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
     if all_docs and len(all_docs) > 0:
         try:
             # Hybrid search: BM25 (keyword) + Vector (semantic)
+            # Both vector_store and BM25 are indexes - vector_store is the semantic index,
+            # and BM25 index is created from the provider factory
             hybrid_retriever = HybridRetriever(vector_store, all_docs)
             
             # Determine query type and weights

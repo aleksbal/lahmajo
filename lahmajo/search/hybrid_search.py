@@ -5,12 +5,11 @@ This is the industry standard approach for production RAG systems.
 
 Uses Reciprocal Rank Fusion (RRF) to combine results from both methods.
 """
-import re
 from typing import List, Tuple
-from collections import defaultdict
 
-from rank_bm25 import BM25Okapi
 from langchain_core.documents import Document
+from lahmajo.search.bm25_provider import get_bm25_provider, BM25Provider
+from lahmajo.storage.vector_index_provider import VectorIndexProvider
 
 
 class HybridRetriever:
@@ -21,29 +20,40 @@ class HybridRetriever:
     - BM25: Excellent for exact matches, names, keywords
     - Vector: Good for semantic similarity
     - RRF: Combines both effectively
+    
+    Terminology Note:
+    - Both parameters are called "index" for consistency (both are search indexes)
+    - vector_index: VectorIndexProvider (pluggable - in_memory, elasticsearch, etc.)
+    - bm25_index: BM25Provider (pluggable - rank_bm25, elasticsearch, etc.)
+    Both are fully pluggable via environment variables for maximum flexibility.
     """
     
-    def __init__(self, vector_store, documents: List[Document]):
+    def __init__(self, vector_index: VectorIndexProvider, documents: List[Document], bm25_index: BM25Provider = None):
         """
         Initialize hybrid retriever.
         
         Args:
-            vector_store: The vector store for semantic search
-            documents: All documents in the store (for BM25 indexing)
+            vector_index: The vector index provider for semantic search (pluggable implementation)
+            documents: All documents in the index (needed to build BM25 index)
+            bm25_index: Optional BM25 index provider instance (default: from factory)
+        
+        Note: Both vector_index and bm25_index are search indexes that store documents.
+        - vector_index: VectorIndexProvider (pluggable - can be in_memory, elasticsearch, etc.)
+        - bm25_index: BM25Provider (pluggable - can be rank_bm25, elasticsearch, etc.)
+        All documents are needed here to build the BM25 index. During search,
+        only top candidates from each method are retrieved and combined for efficiency.
         """
-        self.vector_store = vector_store
+        self.vector_index = vector_index
         self.documents = documents
         
-        # Build BM25 index from document texts
-        # Tokenize documents for BM25
-        tokenized_docs = [self._tokenize(doc.page_content) for doc in documents]
-        self.bm25 = BM25Okapi(tokenized_docs)
-    
-    def _tokenize(self, text: str) -> List[str]:
-        """Simple tokenization for BM25."""
-        # Convert to lowercase and split on non-word characters
-        tokens = re.findall(r'\w+', text.lower())
-        return tokens
+        # Get BM25 index (from factory or use provided one)
+        if bm25_index is None:
+            self.bm25_index = get_bm25_provider()
+        else:
+            self.bm25_index = bm25_index
+        
+        # Index documents with BM25 index
+        self.bm25_index.index_documents(documents)
     
     def search(
         self, 
@@ -55,6 +65,9 @@ class HybridRetriever:
         """
         Perform hybrid search combining BM25 and vector search.
         
+        Optimization: Only retrieves top candidates (2k) from each method, not all documents.
+        This is much more efficient than processing all documents.
+        
         Args:
             query: Search query
             k: Number of results to return
@@ -64,47 +77,62 @@ class HybridRetriever:
         Returns:
             List of (document, combined_score) tuples, sorted by score (higher is better)
         """
-        # BM25 search (keyword matching)
-        query_tokens = self._tokenize(query)
-        bm25_scores = self.bm25.get_scores(query_tokens)
+        # Get top candidates from each method (retrieve more than k to allow for better combination)
+        # Using 2k to ensure we have enough candidates to combine, but not all documents
+        candidate_count = max(k * 2, 20)  # At least 2k, minimum 20
+        
+        # BM25 search (keyword matching) - only get top candidates
+        bm25_results = self.bm25_index.search(query, top_k=candidate_count)
         
         # Normalize BM25 scores to 0-1 range
-        if max(bm25_scores) > 0:
-            bm25_scores = [s / max(bm25_scores) for s in bm25_scores]
-        else:
-            bm25_scores = [0.0] * len(bm25_scores)
+        bm25_scores_dict = {}
+        if bm25_results:
+            max_score = max(score for _, score in bm25_results) if bm25_results else 0
+            if max_score > 0:
+                bm25_scores_dict = {
+                    doc.page_content: score / max_score
+                    for doc, score in bm25_results
+                }
+            else:
+                bm25_scores_dict = {doc.page_content: 0.0 for doc, _ in bm25_results}
         
-        # Vector search (semantic similarity)
+        # Vector search (semantic similarity) - only get top candidates
+        vector_scores_dict = {}
+        vector_docs = []
         try:
-            vector_results = self.vector_store.similarity_search_with_score(query, k=len(self.documents))
-            # Create a dict mapping documents to vector scores
-            # Note: vector scores are distances (lower = better), so we need to convert
-            vector_scores_dict = {}
-            for doc, score in vector_results:
-                # Find matching document by content (fuzzy match for efficiency)
-                for i, stored_doc in enumerate(self.documents):
-                    # Match by content (exact or first 100 chars for efficiency)
-                    if (stored_doc.page_content == doc.page_content or 
-                        stored_doc.page_content[:100] == doc.page_content[:100]):
-                        # Convert distance to similarity (1 / (1 + distance))
-                        similarity = 1.0 / (1.0 + abs(score))
-                        vector_scores_dict[i] = similarity
-                        break
+            vector_results = self.vector_index.similarity_search_with_score(query, k=candidate_count)
+            # Create a mapping from document content to normalized similarity score
+            # Note: vector scores are distances (lower = better), so we convert to similarity
+            if vector_results:
+                # Find max distance for normalization
+                max_distance = max(abs(score) for _, score in vector_results) if vector_results else 1.0
+                if max_distance > 0:
+                    for doc, score in vector_results:
+                        # Convert distance to similarity (normalized 0-1)
+                        similarity = 1.0 / (1.0 + abs(score) / max_distance)
+                        vector_scores_dict[doc.page_content] = similarity
+                        vector_docs.append(doc)
         except:
             # Fallback if similarity_search_with_score not available
-            vector_results = self.vector_store.similarity_search(query, k=len(self.documents))
-            vector_scores_dict = {}
+            vector_results = self.vector_index.similarity_search(query, k=candidate_count)
             for doc in vector_results:
-                for i, stored_doc in enumerate(self.documents):
-                    if stored_doc.page_content == doc.page_content:
-                        vector_scores_dict[i] = 0.5  # Default similarity
-                        break
+                vector_scores_dict[doc.page_content] = 0.5  # Default similarity
+                vector_docs.append(doc)
         
-        # Combine scores using weighted average
+        # Get unique documents from both result sets
+        candidate_docs = {}
+        for doc, _ in bm25_results:
+            candidate_docs[doc.page_content] = doc
+        for doc in vector_docs:
+            candidate_docs[doc.page_content] = doc
+        
+        # Combine scores using weighted average (only for candidate documents)
         combined_scores = []
-        for i, doc in enumerate(self.documents):
-            bm25_score = bm25_scores[i]
-            vector_score = vector_scores_dict.get(i, 0.0)
+        for content, doc in candidate_docs.items():
+            # Get BM25 score (normalized 0-1, default 0 if not in BM25 results)
+            bm25_score = bm25_scores_dict.get(content, 0.0)
+            # Get vector score (normalized 0-1, default 0 if not in vector results)
+            vector_score = vector_scores_dict.get(content, 0.0)
             
             # Weighted combination
             combined_score = (bm25_weight * bm25_score) + (vector_weight * vector_score)
@@ -126,8 +154,6 @@ def reciprocal_rank_fusion(
     Reciprocal Rank Fusion (RRF) to combine results from multiple retrieval methods.
     
     RRF formula: score = sum(1 / (k + rank)) for each method
-    
-    This is the industry standard way to combine heterogeneous search results.
     """
     # Create rank dictionaries
     bm25_ranks = {doc.page_content: rank + 1 for rank, (doc, _) in enumerate(bm25_results)}

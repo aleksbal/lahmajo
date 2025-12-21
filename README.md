@@ -1,6 +1,6 @@
 # Lahmajo - RAG System with Hybrid Document Search
 
-Experimental Retrieval-Augmented Generation (RAG) system with Web UI interfaces for testing, experimenting and prototyping. Currently, the project uses local (or cloud) Ollama for LLM inference and implements standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
+Experimental Retrieval-Augmented Generation (RAG) system with Web UI interfaces for testing, experimenting and prototyping. Supports multiple LLM providers (Ollama local/cloud, OpenAI) and implements standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
 
 ## Features
 
@@ -59,10 +59,10 @@ You can choose between two chunking strategies when ingesting documents:
 ## Requirements
 
 - Python 3.12+
-- Ollama running locally on `http://127.0.0.1:11434`
-- Required Ollama models:
-  - `mistral` (or `llama3`) for chat/LLM
-  - `nomic-embed-text` for embeddings
+- **LLM Provider** (choose one):
+  - **Ollama (default)**: Running locally on `http://127.0.0.1:11434`
+    - Required models: `gpt-oss:120b-cloud` (or `llama3`) for chat/LLM, `embeddinggemma` for embeddings
+  - **OpenAI**: API key required (see Configuration below)
 
 ## Installation
 
@@ -77,6 +77,124 @@ pip install -r requirements.txt
 # Ensure Ollama is running
 ollama serve
 ```
+
+## Configuration
+
+The system supports multiple LLM and embedding providers via environment variables. By default, it uses Ollama locally.
+
+### LLM Provider Configuration
+
+Set `LLM_PROVIDER` to choose your LLM backend:
+
+**Ollama Local (default):**
+```bash
+export LLM_PROVIDER=ollama_local
+export LLM_MODEL="gpt-oss:120b-cloud"  # Optional, defaults to gpt-oss:120b-cloud
+export LLM_BASE_URL="http://127.0.0.1:11434"  # Optional, defaults to http://127.0.0.1:11434
+export LLM_TEMPERATURE=0.1  # Optional, defaults to 0.1
+```
+
+**Ollama Cloud:**
+```bash
+export LLM_PROVIDER=ollama_cloud
+export LLM_MODEL="gpt-oss:120b-cloud"
+export LLM_BASE_URL="https://your-ollama-cloud-url.com"  # Your Ollama cloud endpoint
+export LLM_TEMPERATURE=0.1
+```
+
+**OpenAI:**
+```bash
+export LLM_PROVIDER=openai
+export LLM_MODEL="gpt-4"  # Optional, defaults to gpt-4
+export OPENAI_API_KEY="your-api-key-here"
+export LLM_TEMPERATURE=0.1
+```
+
+### Embedding Provider Configuration
+
+Set `EMBEDDING_PROVIDER` to choose your embedding backend:
+
+**Ollama Local (default):**
+```bash
+export EMBEDDING_PROVIDER=ollama_local
+export EMBEDDING_MODEL="embeddinggemma"  # Optional, defaults to embeddinggemma
+export EMBEDDING_BASE_URL="http://127.0.0.1:11434"  # Optional, defaults to http://127.0.0.1:11434
+```
+
+**Ollama Cloud:**
+```bash
+export EMBEDDING_PROVIDER=ollama_cloud
+export EMBEDDING_MODEL="embeddinggemma"
+export EMBEDDING_BASE_URL="https://your-ollama-cloud-url.com"
+```
+
+**OpenAI:**
+```bash
+export EMBEDDING_PROVIDER=openai
+export EMBEDDING_MODEL="text-embedding-ada-002"  # Optional, defaults to text-embedding-ada-002
+export OPENAI_API_KEY="your-api-key-here"  # Same key as LLM if using OpenAI for both
+```
+
+### Quick Examples
+
+**Use OpenAI for both LLM and embeddings:**
+```bash
+export LLM_PROVIDER=openai
+export EMBEDDING_PROVIDER=openai
+export OPENAI_API_KEY="your-key-here"
+```
+
+**Use Ollama locally (no configuration needed - this is the default):**
+```bash
+# No environment variables needed, just ensure Ollama is running
+ollama serve
+```
+
+**Mix providers (e.g., Ollama for LLM, OpenAI for embeddings):**
+```bash
+export LLM_PROVIDER=ollama_local
+export EMBEDDING_PROVIDER=openai
+export OPENAI_API_KEY="your-key-here"
+```
+
+**Note:** If you want to use OpenAI, you'll need to install the optional dependency:
+```bash
+pip install langchain-openai
+```
+
+### Vector Index Provider Configuration
+
+The system supports multiple vector index implementations via environment variables. By default, it uses in-memory storage.
+
+**In-Memory (default):**
+```bash
+export VECTOR_INDEX_PROVIDER=in_memory
+# No additional configuration needed
+```
+
+**Elasticsearch:**
+```bash
+export VECTOR_INDEX_PROVIDER=elasticsearch
+export ELASTICSEARCH_URL="http://localhost:9200"  # Optional, defaults to http://localhost:9200
+export ELASTICSEARCH_INDEX="lahmajo_vectors"  # Optional, defaults to lahmajo_vectors
+```
+
+**Note:** If you want to use Elasticsearch, you'll need to install the optional dependency:
+```bash
+pip install langchain-elasticsearch
+```
+
+### BM25 Index Provider Configuration
+
+The system supports multiple BM25/keyword search implementations via environment variables. By default, it uses `rank-bm25`.
+
+**rank-bm25 (default):**
+```bash
+export BM25_PROVIDER=rank_bm25
+# No additional configuration needed
+```
+
+**Note:** Additional BM25 providers (e.g., Elasticsearch, Whoosh) can be added by implementing the `BM25Provider` interface in `lahmajo/search/bm25_provider.py`.
 
 ## Usage
 

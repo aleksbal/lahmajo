@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 from langchain_core.documents import Document
-from langchain_core.vectorstores import InMemoryVectorStore
+from lahmajo.storage.vector_index_provider import VectorIndexProvider
 
 from lahmajo.storage.vector_store import get_vector_store, add_documents
 from lahmajo.storage.indexing import ingest_documents

@@ -1,29 +1,42 @@
 # lahmajo/storage/vector_store.py
-"""Vector store management and state."""
+"""Vector index management and state."""
 from typing import List, Optional
 from langchain_core.documents import Document
-from langchain_core.vectorstores import InMemoryVectorStore
 
-from lahmajo.storage.indexing import build_vector_store
+from lahmajo.storage.vector_index_provider import get_vector_index_provider, VectorIndexProvider
 
 
-# Lazy initialization - build vector store only when first needed
-_vector_store: Optional[InMemoryVectorStore] = None
+# Lazy initialization - build vector index only when first needed
+_vector_index: Optional[VectorIndexProvider] = None
 _all_documents: List[Document] = []  # Store all documents for hybrid search
 
 
-def get_vector_store() -> InMemoryVectorStore:
-    """Get or build the vector store (lazy initialization)."""
-    global _vector_store, _all_documents
-    if _vector_store is None:
-        _vector_store = build_vector_store(show_progress=False)  # Silent initialization
+def get_vector_store() -> VectorIndexProvider:
+    """
+    Get or build the vector index (lazy initialization).
+    
+    Note: This function is kept as get_vector_store() for backward compatibility,
+    but it returns a VectorIndexProvider instance (which can be any implementation).
+    """
+    global _vector_index, _all_documents
+    if _vector_index is None:
+        _vector_index = get_vector_index_provider()
         # Initialize documents list - we'll populate it as documents are added
         _all_documents = []
-    return _vector_store
+    return _vector_index
 
 
 def get_all_documents() -> List[Document]:
-    """Get all documents in the vector store for hybrid search."""
+    """
+    Get all documents in the vector store.
+    
+    Note: This is used to initialize the BM25 index (which needs all documents
+    to build the keyword index). During search, only top candidates from each
+    method are retrieved and combined - not all documents.
+    
+    Returns:
+        List of all documents in the store
+    """
     global _all_documents
     return _all_documents
 
