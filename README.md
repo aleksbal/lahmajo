@@ -1,4 +1,4 @@
-# Lahmajo - RAG System with Hybrid Document Search
+# Lahmajo - Agentic RAG with Hybrid Document Search
 
 Experimental Retrieval-Augmented Generation (RAG) system with Web UI interfaces for testing, experimenting and prototyping. Supports multiple LLM providers (Ollama local/cloud, OpenAI) and implements standard hybrid search combining BM25 (keyword) and vector (semantic) retrieval.
 
