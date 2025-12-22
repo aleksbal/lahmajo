@@ -1,4 +1,4 @@
-# lahmajo/search/bm25_provider.py
+# lahmajo/indexes/bm25_provider.py
 """BM25 provider factory - supports multiple BM25/keyword search implementations."""
 import os
 from abc import ABC, abstractmethod

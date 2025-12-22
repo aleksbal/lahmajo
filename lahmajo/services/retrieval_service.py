@@ -4,7 +4,7 @@ import logging
 from typing import List, Tuple
 from langchain_core.documents import Document
 
-from lahmajo.storage.vector_store import get_vector_store, get_all_documents
+from lahmajo.indexes.state import get_vector_index, get_all_documents
 from lahmajo.search.hybrid_search import HybridRetriever
 
 logger = logging.getLogger(__name__)
@@ -21,16 +21,16 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
     Returns:
         Tuple of (serialized_context, documents)
     """
-    vector_store = get_vector_store()
+    vector_index = get_vector_index()
     all_docs = get_all_documents()
     
     # Use hybrid search if we have documents indexed, otherwise fall back to vector only
     if all_docs and len(all_docs) > 0:
         try:
             # Hybrid search: BM25 (keyword) + Vector (semantic)
-            # Both vector_store and BM25 are indexes - vector_store is the semantic index,
+            # Both vector_index and BM25 are indexes - vector_index is the semantic index,
             # and BM25 index is created from the provider factory
-            hybrid_retriever = HybridRetriever(vector_store, all_docs)
+            hybrid_retriever = HybridRetriever(vector_index, all_docs)
             
             # Determine query type and weights
             query_lower = query.lower()
@@ -53,17 +53,17 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
             logger.warning(f"Hybrid search failed, falling back to vector search: {e}")
             # Fallback to vector search
             try:
-                retrieved_with_scores = vector_store.similarity_search_with_score(query, k=10)
+                retrieved_with_scores = vector_index.similarity_search_with_score(query, k=10)
                 top_docs = [doc for doc, score in retrieved_with_scores]
             except:
-                top_docs = vector_store.similarity_search(query, k=10)
+                top_docs = vector_index.similarity_search(query, k=10)
     else:
         # Fallback to vector-only search
         try:
-            retrieved_with_scores = vector_store.similarity_search_with_score(query, k=10)
+            retrieved_with_scores = vector_index.similarity_search_with_score(query, k=10)
             top_docs = [doc for doc, score in retrieved_with_scores]
         except:
-            top_docs = vector_store.similarity_search(query, k=10)
+            top_docs = vector_index.similarity_search(query, k=10)
     
     # Filter out very small chunks
     MIN_CHARS = 100

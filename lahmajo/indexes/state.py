@@ -1,9 +1,9 @@
-# lahmajo/storage/vector_store.py
-"""Vector index management and state."""
+# lahmajo/indexes/state.py
+"""Vector index state management."""
 from typing import List, Optional
 from langchain_core.documents import Document
 
-from lahmajo.storage.vector_index_provider import get_vector_index_provider, VectorIndexProvider
+from lahmajo.indexes.vector_provider import get_vector_index_provider, VectorIndexProvider
 
 
 # Lazy initialization - build vector index only when first needed
@@ -11,12 +11,12 @@ _vector_index: Optional[VectorIndexProvider] = None
 _all_documents: List[Document] = []  # Store all documents for hybrid search
 
 
-def get_vector_store() -> VectorIndexProvider:
+def get_vector_index() -> VectorIndexProvider:
     """
     Get or build the vector index (lazy initialization).
     
-    Note: This function is kept as get_vector_store() for backward compatibility,
-    but it returns a VectorIndexProvider instance (which can be any implementation).
+    Returns:
+        VectorIndexProvider instance (pluggable implementation)
     """
     global _vector_index, _all_documents
     if _vector_index is None:
@@ -47,8 +47,31 @@ def add_documents(documents: List[Document]):
     _all_documents.extend(documents)
 
 
-def reset_vector_store():
-    """Reset the vector store (useful for testing)."""
-    global _vector_store, _all_documents
-    _vector_store = None
+def get_vector_store() -> VectorIndexProvider:
+    """
+    Get vector index (backward compatibility alias).
+    
+    Note: Use get_vector_index() for new code.
+    """
+    return get_vector_index()
+
+
+def get_vector_store() -> VectorIndexProvider:
+    """
+    Get vector index (backward compatibility alias).
+    
+    Note: Use get_vector_index() for new code.
+    """
+    return get_vector_index()
+
+
+def reset_vector_index():
+    """Reset the vector index (useful for testing)."""
+    global _vector_index, _all_documents
+    _vector_index = None
     _all_documents = []
+
+
+def reset_vector_store():
+    """Reset vector index (backward compatibility alias)."""
+    reset_vector_index()

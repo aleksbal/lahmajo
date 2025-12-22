@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from langchain_core.documents import Document
 
 from lahmajo.services.retrieval_service import retrieve_context
-from lahmajo.storage.vector_store import add_documents, reset_vector_store
+from lahmajo.indexes.state import add_documents, reset_vector_index
 
 
 class TestRetrievalService(unittest.TestCase):
@@ -13,14 +13,14 @@ class TestRetrievalService(unittest.TestCase):
     
     def setUp(self):
         """Reset state before each test."""
-        reset_vector_store()
+        reset_vector_index()
     
-    @patch('lahmajo.services.retrieval_service.get_vector_store')
-    def test_retrieve_context_no_documents(self, mock_get_store):
+    @patch('lahmajo.services.retrieval_service.get_vector_index')
+    def test_retrieve_context_no_documents(self, mock_get_index):
         """Test retrieval when no documents are indexed."""
-        mock_store = MagicMock()
-        mock_store.similarity_search.return_value = []
-        mock_get_store.return_value = mock_store
+        mock_index = MagicMock()
+        mock_index.similarity_search.return_value = []
+        mock_get_index.return_value = mock_index
         
         serialized, docs = retrieve_context("test query")
         
@@ -28,12 +28,12 @@ class TestRetrievalService(unittest.TestCase):
         self.assertEqual(docs, [])
     
     @patch('lahmajo.services.retrieval_service.HybridRetriever')
-    @patch('lahmajo.services.retrieval_service.get_vector_store')
-    def test_retrieve_context_with_documents(self, mock_get_store, mock_hybrid_class):
+    @patch('lahmajo.services.retrieval_service.get_vector_index')
+    def test_retrieve_context_with_documents(self, mock_get_index, mock_hybrid_class):
         """Test retrieval with documents using hybrid search."""
         # Setup mocks
-        mock_store = MagicMock()
-        mock_get_store.return_value = mock_store
+        mock_index = MagicMock()
+        mock_get_index.return_value = mock_index
         
         doc1 = Document(page_content="Test content 1", metadata={"source": "test1"})
         doc2 = Document(page_content="Test content 2", metadata={"source": "test2"})

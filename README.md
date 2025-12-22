@@ -194,7 +194,9 @@ export BM25_PROVIDER=rank_bm25
 # No additional configuration needed
 ```
 
-**Note:** Additional BM25 providers (e.g., Elasticsearch, Whoosh) can be added by implementing the `BM25Provider` interface in `lahmajo/search/bm25_provider.py`.
+**Note:** Additional BM25 providers (e.g., Elasticsearch, Whoosh) can be added by implementing the `BM25Provider` interface in `lahmajo/indexes/bm25_provider.py`.
+
+Additional vector index providers (e.g., Pinecone, Weaviate) can be added by implementing the `VectorIndexProvider` interface in `lahmajo/indexes/vector_provider.py`.
 
 ## Usage
 
@@ -237,7 +239,7 @@ Then open `http://localhost:8000` in your browser.
    - Unstructured long-form → 600 char chunks (preserves context)
 4. **Process Chunks**: Long chunks are intelligently split to fit embedding limits (1200 chars)
 5. **Index Documents**: 
-   - Added to vector store (for semantic search)
+   - Added to vector index (for semantic search)
    - Added to BM25 index (for keyword matching)
 
 ### Query Flow
@@ -245,7 +247,7 @@ Then open `http://localhost:8000` in your browser.
 1. **Query Analysis**: System detects if query is a name/keyword query or semantic query
 2. **Hybrid Retrieval**:
    - BM25 finds exact keyword matches
-   - Vector search finds semantically similar content
+   - Vector index finds semantically similar content
    - Results are combined with weighted scores
 3. **Filtering**: Very small chunks (< 100 chars) are filtered out
 4. **Top-K Selection**: Top 8 most relevant chunks are selected
@@ -261,7 +263,7 @@ Pure vector search has limitations:
 
 Hybrid search solves this by:
 - BM25 handles exact matches (keywords, technical terms, specific identifiers)
-- Vector search handles semantic similarity and meaning
+- Vector index handles semantic similarity and meaning
 - Combined scores provide better ranking and relevance
 
 ## Project Structure
@@ -275,9 +277,12 @@ lahmajo/
 │   │   ├── rag_service.py        # RAG agent orchestration
 │   │   ├── retrieval_service.py  # Document retrieval
 │   │   └── ingestion_service.py  # Document ingestion
-│   ├── storage/
-│   │   ├── vector_store.py  # Vector store management
-│   │   └── indexing.py       # Document loading and chunking
+│   ├── ingestion/
+│   │   └── processing.py     # Document loading, chunking, embedding
+│   ├── indexes/
+│   │   ├── state.py          # Index state management
+│   │   ├── vector_provider.py # Vector index implementations
+│   │   └── bm25_provider.py   # BM25 index implementations
 │   ├── search/
 │   │   └── hybrid_search.py  # BM25 + Vector hybrid search
 │   └── cli.py            # Command-line interface
@@ -291,7 +296,7 @@ lahmajo/
 
 ### Empty Vector Store Initialization
 
-The `build_vector_store()` function creates an **empty** in-memory vector store:
+The `build_vector_store()` function creates an **empty** vector index (pluggable implementation):
 - Users ingest documents
 
 ### Adaptive Chunking
@@ -327,9 +332,16 @@ The implementation follows hybrid search approach:
          │           - ingestion_service.py
          ▼
 ┌─────────────────┐
-│  Storage Layer  │  Data storage (lahmajo/storage/)
-│  (Persistence)  │  - vector_store.py
-└────────┬────────┘  - indexing.py
+│ Ingestion Layer │  Document ingestion (lahmajo/ingestion/)
+│  (Processing)  │  - processing.py
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Index Layer    │  Search indexes (lahmajo/indexes/)
+│  (Indexes)      │  - state.py
+└────────┬────────┘  - vector_provider.py
+         │           - bm25_provider.py
          │
          ▼
 ┌─────────────────┐
@@ -361,15 +373,24 @@ The implementation follows hybrid search approach:
 - `retrieval_service.py` - Document retrieval operations
 - `ingestion_service.py` - Document ingestion workflow
 
-### Storage Layer (`lahmajo/storage/`)
-**Responsibility**: Data storage and management
-- Vector store management
-- Document processing and chunking
+### Ingestion Layer (`lahmajo/ingestion/`)
+**Responsibility**: Document ingestion pipeline
+- Document loading, chunking, and embedding
 - **No business logic**
 
 **Files**:
-- `vector_store.py` - Vector store singleton
-- `indexing.py` - Document loading and chunking
+- `processing.py` - Document loading, chunking, and embedding
+
+### Index Layer (`lahmajo/indexes/`)
+**Responsibility**: Search index providers and state management
+- Index state management
+- Pluggable index implementations
+- **No business logic**
+
+**Files**:
+- `state.py` - Index state management (singleton, document tracking)
+- `vector_provider.py` - Vector index provider (in_memory, elasticsearch, etc.)
+- `bm25_provider.py` - BM25 index provider (rank_bm25, elasticsearch, etc.)
 
 ### Search Layer (`lahmajo/search/`)
 **Responsibility**: Search algorithms
@@ -386,9 +407,11 @@ The implementation follows hybrid search approach:
 User → API (routes.py) 
      → Service (rag_service.py)
      → Service (retrieval_service.py)
-     → Storage (vector_store.py)
      → Search (hybrid_search.py)
-     → Service (rag_service.py)
+         ├→ Indexes (vector_provider.py) - semantic search
+         └→ Indexes (bm25_provider.py) - keyword search
+     → Service (rag_service.py) - combines results
+     → LLM (llm_provider.py) - generates answer
      → API (routes.py)
      → User
 ```
@@ -397,8 +420,10 @@ User → API (routes.py)
 ```
 User → API (routes.py)
      → Service (ingestion_service.py)
-     → Storage (indexing.py)
-     → Storage (vector_store.py)
+     → Ingestion (processing.py)
+         ├→ Embedding Model (embedding_provider.py) - converts text to vectors
+         ├→ Indexes (vector_provider.py) - stores embedded documents
+         └→ Indexes (bm25_provider.py) - indexes for keyword search
      → Service (ingestion_service.py)
      → API (routes.py)
      → User

@@ -14,7 +14,7 @@ from lahmajo.services.ingestion_service import (
     save_uploaded_files,
     cleanup_temp_files
 )
-from lahmajo.storage.vector_store import get_vector_store, get_all_documents
+from lahmajo.indexes.state import get_vector_index, get_all_documents
 from lahmajo.search.hybrid_search import HybridRetriever
 
 # Set up logging
@@ -65,15 +65,15 @@ async def ask_endpoint(request: AskRequest):
 async def debug_search(query: str, use_hybrid: bool = True):
     """Debug endpoint to test vector store search directly."""
     try:
-        vector_store = get_vector_store()
+        vector_index = get_vector_index()
         all_docs = get_all_documents()
         
         # Use hybrid search if available and requested
         if use_hybrid and all_docs and len(all_docs) > 0:
             try:
-                # Both vector_store and BM25 are indexes - vector_store is the semantic index,
+                # Both vector_index and BM25 are indexes - vector_index is the semantic index,
                 # and BM25 index is created from the provider factory
-                hybrid_retriever = HybridRetriever(vector_store, all_docs)
+                hybrid_retriever = HybridRetriever(vector_index, all_docs)
                 query_lower = query.lower()
                 is_name_query = any(word.isupper() or len(word) > 8 for word in query.split())
                 
@@ -92,11 +92,11 @@ async def debug_search(query: str, use_hybrid: bool = True):
         if not use_hybrid or not all_docs:
             # Fallback to vector-only search
             try:
-                results_with_scores = vector_store.similarity_search_with_score(query, k=15)
+                results_with_scores = vector_index.similarity_search_with_score(query, k=15)
                 filtered_results = [(doc, float(score)) for doc, score in results_with_scores if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"
             except:
-                results = vector_store.similarity_search(query, k=15)
+                results = vector_index.similarity_search(query, k=15)
                 filtered_results = [(doc, None) for doc in results if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"
         

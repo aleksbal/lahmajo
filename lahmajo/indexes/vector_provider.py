@@ -1,4 +1,4 @@
-# lahmajo/storage/vector_index_provider.py
+# lahmajo/indexes/vector_provider.py
 """Vector index provider factory - supports multiple vector store implementations."""
 import os
 from abc import ABC, abstractmethod

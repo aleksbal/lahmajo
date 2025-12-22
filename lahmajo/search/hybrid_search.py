@@ -8,8 +8,8 @@ Uses Reciprocal Rank Fusion (RRF) to combine results from both methods.
 from typing import List, Tuple
 
 from langchain_core.documents import Document
-from lahmajo.search.bm25_provider import get_bm25_provider, BM25Provider
-from lahmajo.storage.vector_index_provider import VectorIndexProvider
+from lahmajo.indexes.bm25_provider import get_bm25_provider, BM25Provider
+from lahmajo.indexes.vector_provider import VectorIndexProvider
 
 
 class HybridRetriever:

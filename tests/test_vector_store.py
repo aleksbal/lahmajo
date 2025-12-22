@@ -3,11 +3,12 @@
 import unittest
 from unittest.mock import patch, MagicMock
 
-from lahmajo.storage.vector_store import (
-    get_vector_store,
+from lahmajo.indexes.state import (
+    get_vector_index,
+    get_vector_store,  # backward compatibility
     get_all_documents,
     add_documents,
-    reset_vector_store
+    reset_vector_index,
 )
 from langchain_core.documents import Document
 
@@ -17,9 +18,9 @@ class TestVectorStore(unittest.TestCase):
     
     def setUp(self):
         """Reset state before each test."""
-        reset_vector_store()
+        reset_vector_index()
     
-    @patch('lahmajo.storage.vector_store.build_vector_store')
+    @patch('lahmajo.indexes.state.get_vector_index_provider')
     def test_get_vector_store_lazy_init(self, mock_build):
         """Test that vector store is initialized lazily."""
         mock_store = MagicMock()
@@ -53,14 +54,14 @@ class TestVectorStore(unittest.TestCase):
         self.assertEqual(docs[0].page_content, "Test 1")
         self.assertEqual(docs[1].page_content, "Test 2")
     
-    def test_reset_vector_store(self):
-        """Test resetting vector store."""
+    def test_reset_vector_index(self):
+        """Test resetting vector index."""
         # Add some documents
         doc = Document(page_content="Test", metadata={})
         add_documents([doc])
         
         # Reset
-        reset_vector_store()
+        reset_vector_index()
         
         # Should be empty
         docs = get_all_documents()

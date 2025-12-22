@@ -5,10 +5,9 @@ import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 from langchain_core.documents import Document
-from lahmajo.storage.vector_index_provider import VectorIndexProvider
-
-from lahmajo.storage.vector_store import get_vector_store, add_documents
-from lahmajo.storage.indexing import ingest_documents
+from lahmajo.indexes.vector_provider import VectorIndexProvider
+from lahmajo.indexes.state import get_vector_index, add_documents
+from lahmajo.ingestion.processing import ingest_documents
 
 
 def ingest_documents_from_files(
@@ -29,10 +28,10 @@ def ingest_documents_from_files(
     Returns:
         Tuple of (chunks_added, ingested_documents)
     """
-    vector_store = get_vector_store()
+    vector_index = get_vector_index()
     
     chunks_added, ingested_docs = ingest_documents(
-        vector_store,
+        vector_index,
         urls=urls,
         file_paths=file_paths,
         use_semantic=use_semantic,

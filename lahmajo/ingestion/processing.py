@@ -1,4 +1,4 @@
-# lahmajo/storage/indexing.py
+# lahmajo/ingestion/processing.py
 import bs4
 import os
 import time
@@ -16,7 +16,7 @@ from langchain_experimental.text_splitter import SemanticChunker
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from lahmajo.llm import get_embeddings
-from lahmajo.storage.vector_index_provider import get_vector_index_provider, VectorIndexProvider
+from lahmajo.indexes.vector_provider import get_vector_index_provider, VectorIndexProvider
 
 
 def build_vector_store(show_progress: bool = True) -> VectorIndexProvider:
