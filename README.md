@@ -150,6 +150,13 @@ export OPENAI_API_KEY="your-key-here"
 ollama serve
 ```
 
+**Use Ollama Cloud via local Ollama:**
+```bash
+# No environment variables needed, register your local Ollama with your Ollama Cloud account and ensure that Ollama is running!
+# Use a Olllama Cloud running LLM modell (with suffix -cloud). An example how to test once local Ollama has been successfully registered:
+ollama run gpt-oss:120b-cloud
+``` 
+
 **Mix providers (e.g., Ollama for LLM, OpenAI for embeddings):**
 ```bash
 export LLM_PROVIDER=ollama_local
