@@ -9,7 +9,7 @@ Experimental Retrieval-Augmented Generation (RAG) system with Web UI interfaces 
 - **Adaptive Chunking**: Automatically detects document types (structured vs unstructured content) and uses appropriate chunk sizes
 - **Multiple File Formats**: Supports TXT, PDF, and Markdown files
 - **Flexible Chunking Strategies**: Choose between Recursive (structured docs) or Semantic (long-form) chunking
-- **Web UI**: Modern single-page interface for document ingestion and question answering
+- **Web UI**: Single-page interface for document ingestion and question answering
 - **CLI Interface**: Command-line interface for interactive Q&A
 
 ## Architecture
