@@ -96,6 +96,7 @@ class ElasticsearchVectorIndexProvider(VectorIndexProvider):
     Vector index implementation using Elasticsearch.
     
     Suitable for production environments with large datasets.
+    Stores documents with both 'text' field (for BM25) and 'embedding' field (for vector search).
     """
     
     def __init__(self):
@@ -115,21 +116,104 @@ class ElasticsearchVectorIndexProvider(VectorIndexProvider):
         self.vector_store = None
         
         # Get Elasticsearch configuration from environment
-        es_url = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-        index_name = os.getenv("ELASTICSEARCH_INDEX", "lahmajo_vectors")
+        self.es_url = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
+        self.index_name = os.getenv("ELASTICSEARCH_INDEX", "lahmajo_vectors")
         
-        # Initialize Elasticsearch store
+        # Get embedding dimension for index mapping
+        try:
+            test_embedding = self.embeddings.embed_query("test")
+            self.embedding_dim = len(test_embedding)
+        except Exception as e:
+            raise ValueError(f"Failed to get embedding dimension: {e}")
+        
+        # Initialize Elasticsearch store with proper index mapping
         self.vector_store = ElasticsearchStore(
             embedding=self.embeddings,
-            es_url=es_url,
-            index_name=index_name,
+            es_url=self.es_url,
+            index_name=self.index_name,
         )
+        
+        # Ensure index mapping includes both text and embedding fields
+        self._ensure_index_mapping()
+    
+    def _ensure_index_mapping(self):
+        """Ensure ES index has proper mapping with both text and dense_vector fields."""
+        try:
+            from elasticsearch import Elasticsearch
+            
+            es_client = Elasticsearch([self.es_url])
+            
+            # Check if index exists
+            if not es_client.indices.exists(index=self.index_name):
+                # Create index with proper mapping
+                mapping = {
+                    "mappings": {
+                        "properties": {
+                            "text": {
+                                "type": "text",
+                                "analyzer": "standard"
+                            },
+                            "embedding": {
+                                "type": "dense_vector",
+                                "dims": self.embedding_dim,
+                                "index": True,
+                                "similarity": "cosine"
+                            },
+                            "metadata": {
+                                "type": "object",
+                                "enabled": True
+                            }
+                        }
+                    }
+                }
+                es_client.indices.create(index=self.index_name, body=mapping)
+            else:
+                # Update existing index mapping if needed
+                try:
+                    current_mapping = es_client.indices.get_mapping(index=self.index_name)
+                    props = current_mapping[self.index_name]["mappings"].get("properties", {})
+                    
+                    # Check if text field exists, if not add it
+                    if "text" not in props:
+                        es_client.indices.put_mapping(
+                            index=self.index_name,
+                            body={
+                                "properties": {
+                                    "text": {
+                                        "type": "text",
+                                        "analyzer": "standard"
+                                    }
+                                }
+                            }
+                        )
+                except Exception:
+                    # If mapping update fails, continue - langchain will handle it
+                    pass
+        except ImportError:
+            # elasticsearch client not available, langchain will handle mapping
+            pass
+        except Exception:
+            # If mapping setup fails, continue - langchain will handle it
+            pass
     
     def add_documents(self, documents: List[Document]) -> None:
-        """Add documents to Elasticsearch."""
+        """Add documents to Elasticsearch with both text and embedding fields."""
         if self.vector_store is None:
             raise ValueError("Elasticsearch store not initialized")
-        self.vector_store.add_documents(documents)
+        
+        # Ensure documents have text field for BM25 search
+        enhanced_docs = []
+        for doc in documents:
+            # Create enhanced document with text field
+            enhanced_metadata = doc.metadata.copy()
+            enhanced_metadata["text"] = doc.page_content
+            enhanced_doc = Document(
+                page_content=doc.page_content,
+                metadata=enhanced_metadata
+            )
+            enhanced_docs.append(enhanced_doc)
+        
+        self.vector_store.add_documents(enhanced_docs)
     
     def similarity_search(self, query: str, k: int = 4) -> List[Document]:
         """Search using Elasticsearch."""
@@ -142,6 +226,25 @@ class ElasticsearchVectorIndexProvider(VectorIndexProvider):
         if self.vector_store is None:
             raise ValueError("Elasticsearch store not initialized")
         return self.vector_store.similarity_search_with_score(query, k=k)
+    
+    def supports_native_hybrid(self) -> bool:
+        """Check if this provider supports native ES hybrid search."""
+        return True
+    
+    def get_es_client(self):
+        """Get Elasticsearch client for direct ES operations."""
+        try:
+            from elasticsearch import Elasticsearch
+            return Elasticsearch([self.es_url])
+        except ImportError:
+            raise ImportError(
+                "elasticsearch Python client is required. "
+                "Install it with: pip install elasticsearch"
+            )
+    
+    def get_index_name(self) -> str:
+        """Get the Elasticsearch index name."""
+        return self.index_name
 
 
 # Environment variable keys
@@ -156,15 +259,32 @@ def get_vector_index_provider() -> VectorIndexProvider:
     - in_memory: LangChain's InMemoryVectorStore (default)
     - elasticsearch: Elasticsearch vector store
     
+    When both VECTOR_INDEX_PROVIDER=elasticsearch and BM25_PROVIDER=elasticsearch,
+    consider using ElasticsearchHybridProvider for native hybrid search.
+    
     Environment variables:
     - VECTOR_INDEX_PROVIDER: Provider name (default: "in_memory")
+    - BM25_PROVIDER: BM25 provider name (checked for ES native hybrid)
     - ELASTICSEARCH_URL: Elasticsearch URL (default: "http://localhost:9200")
     - ELASTICSEARCH_INDEX: Elasticsearch index name (default: "lahmajo_vectors")
+    - ELASTICSEARCH_USE_NATIVE_HYBRID: Force use of native hybrid (auto-detected if both providers are ES)
     
     Returns:
         VectorIndexProvider instance
     """
     provider = os.getenv(VECTOR_INDEX_PROVIDER_ENV, "in_memory").lower()
+    bm25_provider = os.getenv("BM25_PROVIDER", "rank_bm25").lower()
+    use_native_hybrid = os.getenv("ELASTICSEARCH_USE_NATIVE_HYBRID", "").lower() == "true"
+    
+    # Check if we should use ES native hybrid provider
+    if provider == "elasticsearch" and bm25_provider == "elasticsearch":
+        if use_native_hybrid:
+            try:
+                from lahmajo.indexes.elasticsearch_hybrid_provider import ElasticsearchHybridProvider
+                return ElasticsearchHybridProvider()
+            except ImportError:
+                # Fall back to regular ES vector provider if hybrid not available
+                pass
     
     if provider == "in_memory":
         return InMemoryVectorIndexProvider()

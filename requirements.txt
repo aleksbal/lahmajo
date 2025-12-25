@@ -13,3 +13,5 @@ langchain-ollama
 langchain-experimental
 langchain-mcp-adapters
 rank-bm25
+langchain-elasticsearch
+elasticsearch

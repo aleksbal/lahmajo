@@ -179,9 +179,9 @@ export ELASTICSEARCH_URL="http://localhost:9200"  # Optional, defaults to http:/
 export ELASTICSEARCH_INDEX="lahmajo_vectors"  # Optional, defaults to lahmajo_vectors
 ```
 
-**Note:** If you want to use Elasticsearch, you'll need to install the optional dependency:
+**Note:** If you want to use Elasticsearch, you'll need to install the optional dependencies:
 ```bash
-pip install langchain-elasticsearch
+pip install langchain-elasticsearch elasticsearch
 ```
 
 ### BM25 Index Provider Configuration
@@ -194,7 +194,38 @@ export BM25_PROVIDER=rank_bm25
 # No additional configuration needed
 ```
 
-**Note:** Additional BM25 providers (e.g., Elasticsearch, Whoosh) can be added by implementing the `BM25Provider` interface in `lahmajo/indexes/bm25_provider.py`.
+**Elasticsearch (Native BM25):**
+```bash
+export BM25_PROVIDER=elasticsearch
+export ELASTICSEARCH_URL="http://localhost:9200"  # Optional, defaults to http://localhost:9200
+export ELASTICSEARCH_INDEX="lahmajo_vectors"  # Optional, defaults to lahmajo_vectors
+```
+
+### Elasticsearch Native Hybrid Search
+
+When both `VECTOR_INDEX_PROVIDER=elasticsearch` and `BM25_PROVIDER=elasticsearch`, the system automatically uses **Elasticsearch native hybrid search**, which provides:
+
+- **Single Query**: Combines BM25 and vector search in one ES query (instead of two separate queries)
+- **Better Performance**: ES native scoring and optimization
+- **Improved Scalability**: ES handles large datasets efficiently
+- **Native Scoring**: ES's optimized BM25 and vector scoring algorithms
+
+**Configuration:**
+```bash
+export VECTOR_INDEX_PROVIDER=elasticsearch
+export BM25_PROVIDER=elasticsearch
+export ELASTICSEARCH_URL="http://localhost:9200"
+export ELASTICSEARCH_INDEX="lahmajo_vectors"
+export ELASTICSEARCH_USE_NATIVE_HYBRID=true  # Optional, auto-detected when both providers are ES
+```
+
+**Benefits over Python-side combination:**
+- Single network round trip instead of two
+- ES native score combination (more sophisticated than weighted average)
+- Better performance at scale
+- No need to keep all documents in memory
+
+**Note:** The system automatically detects when both providers are ES-based and uses native hybrid search. You can also explicitly enable it with `ELASTICSEARCH_USE_NATIVE_HYBRID=true`.
 
 Additional vector index providers (e.g., Pinecone, Weaviate) can be added by implementing the `VectorIndexProvider` interface in `lahmajo/indexes/vector_provider.py`.
 
