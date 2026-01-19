@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: lahmajo-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lahmajo-network
+
+  lahmajo:
+    build: .
+    container_name: lahmajo-app
+    environment:
+      # Elasticsearch Configuration
+      - VECTOR_INDEX_PROVIDER=elasticsearch
+      - BM25_PROVIDER=elasticsearch
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_INDEX=lahmajo_vectors
+      - ELASTICSEARCH_USE_NATIVE_HYBRID=true
+      
+      # LLM Configuration (adjust as needed)
+      - LLM_PROVIDER=ollama_local
+      - EMBEDDING_PROVIDER=ollama_local
+      - LLM_BASE_URL=http://host.docker.internal:11434
+      - EMBEDDING_BASE_URL=http://host.docker.internal:11434
+      
+    ports:
+      - "8000:8080"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./static:/app/static
+      - ./uploads:/app/uploads
+    networks:
+      - lahmajo-network
+    restart: unless-stopped
+
+volumes:
+  es_data:
+    driver: local
+
+networks:
+  lahmajo-network:
+    driver: bridge

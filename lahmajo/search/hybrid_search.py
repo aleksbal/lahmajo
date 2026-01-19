@@ -52,29 +52,16 @@ class HybridRetriever:
         
         # Get BM25 index (from factory or use provided one)
         if bm25_index is None:
-            try:
-                self.bm25_index = get_bm25_provider()
-            except Exception:
-                # If provider creation fails (e.g., in tests), create a mock-like object
-                # This allows tests to work without full provider setup
-                self.bm25_index = None
+            self.bm25_index = get_bm25_provider()
         else:
             self.bm25_index = bm25_index
         
         # Check if we can use ES native hybrid search
-        try:
-            self.use_es_native_hybrid = self._can_use_es_native_hybrid()
-        except Exception:
-            # If detection fails (e.g., in tests), default to False
-            self.use_es_native_hybrid = False
+        self.use_es_native_hybrid = self._can_use_es_native_hybrid()
         
         # Index documents with BM25 index (only needed for non-ES providers)
-        if not self.use_es_native_hybrid and documents and self.bm25_index is not None:
-            try:
-                self.bm25_index.index_documents(documents)
-            except Exception:
-                # If indexing fails (e.g., in tests with mocks), continue
-                pass
+        if not self.use_es_native_hybrid:
+            self.bm25_index.index_documents(documents)
     
     def _can_use_es_native_hybrid(self) -> bool:
         """
@@ -83,10 +70,6 @@ class HybridRetriever:
         Returns:
             True if ES native hybrid can be used, False otherwise
         """
-        # If BM25 index is None (e.g., in tests), can't use native hybrid
-        if self.bm25_index is None:
-            return False
-        
         try:
             from lahmajo.indexes.elasticsearch_hybrid_provider import ElasticsearchHybridProvider
             
@@ -110,8 +93,7 @@ class HybridRetriever:
                     return self.vector_index.get_index_name() == self.bm25_index.get_index_name()
                 # If we can't check index names, assume they're compatible if both are ES
                 return True
-        except (ImportError, AttributeError, TypeError):
-            # If any check fails, default to False
+        except ImportError:
             pass
         
         return False
@@ -164,16 +146,6 @@ class HybridRetriever:
                     logging.warning(f"ES native hybrid search failed, falling back to Python-side combination: {e}")
         
         # Fallback to Python-side combination
-        # If BM25 index is None (e.g., in tests), skip BM25 search
-        if self.bm25_index is None:
-            # Only use vector search
-            try:
-                vector_results = self.vector_index.similarity_search_with_score(query, k=k)
-                return vector_results
-            except:
-                vector_docs = self.vector_index.similarity_search(query, k=k)
-                return [(doc, 0.5) for doc in vector_docs]
-        
         # Get top candidates from each method (retrieve more than k to allow for better combination)
         # Using 2k to ensure we have enough candidates to combine, but not all documents
         candidate_count = max(k * 2, 20)  # At least 2k, minimum 20

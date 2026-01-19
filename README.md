@@ -66,6 +66,19 @@ You can choose between two chunking strategies when ingesting documents:
 
 ## Installation
 
+### Option 1: Docker (Recommended for Elasticsearch)
+
+```bash
+# Start with Docker (includes Elasticsearch)
+./docker-dev.sh start
+
+# Access the application
+# Web UI: http://localhost:8000
+# Elasticsearch: http://localhost:9200
+```
+
+### Option 2: Local Development
+
 ```bash
 # Create virtual environment
 python -m venv .venv
@@ -238,7 +251,23 @@ Additional vector index providers (e.g., Pinecone, Weaviate) can be added by imp
 
 ## Usage
 
-### Web UI
+### Docker (Recommended)
+
+```bash
+# Start all services (Elasticsearch + Lahmajo)
+./docker-dev.sh start
+
+# View logs
+./docker-dev.sh logs
+
+# Check health
+./docker-dev.sh health
+
+# Stop services
+./docker-dev.sh stop
+```
+
+### Local Development
 
 Start the web server:
 
