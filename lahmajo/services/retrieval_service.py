@@ -31,22 +31,14 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
             # Both vector_index and BM25 are indexes - vector_index is the semantic index,
             # and BM25 index is created from the provider factory
             hybrid_retriever = HybridRetriever(vector_index, all_docs)
-            
-            # Determine query type and weights
-            query_lower = query.lower()
-            is_name_query = any(word.isupper() or len(word) > 8 for word in query.split())
-            
-            if is_name_query or len(query.split()) <= 3:
-                # Name or short query - prioritize keyword matching
-                bm25_weight, vector_weight = 0.6, 0.4
-            else:
-                # Longer semantic query - balance both
-                bm25_weight, vector_weight = 0.4, 0.6
-            
-            results = hybrid_retriever.search(query, k=10, bm25_weight=bm25_weight, vector_weight=vector_weight)
+
+            # Combined via Reciprocal Rank Fusion (RRF) for the Python-side path (see
+            # HybridRetriever.search()); bm25_weight/vector_weight are only consulted
+            # when ES native hybrid search is active.
+            results = hybrid_retriever.search(query, k=10)
             top_docs = [doc for doc, score in results]
-            
-            logger.info(f"Hybrid search - Query: {query}, BM25 weight: {bm25_weight}, Vector weight: {vector_weight}")
+
+            logger.info(f"Hybrid search - Query: {query}")
             for i, (doc, score) in enumerate(results[:5]):
                 logger.info(f"Doc {i+1} source: {doc.metadata.get('source', 'unknown')}, hybrid_score: {score:.4f}")
         except Exception as e:

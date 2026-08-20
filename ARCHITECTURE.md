@@ -171,7 +171,7 @@ User → API (routes.py)
 
 When both the vector and BM25 providers are Elasticsearch-based, the system uses **Elasticsearch native hybrid search**:
 - **Single Query**: ES combines BM25 (`match` query) and vector (`knn` query) in one request
-- **Native Scoring**: ES's optimized score combination (more sophisticated than the Python-side weighted average)
+- **Native Scoring**: ES's optimized score combination (query-level boost weights, vs. the Python-side path's Reciprocal Rank Fusion)
 - **Better Performance**: single network round trip, ES query optimization
 - **Scalability**: ES handles large datasets efficiently without keeping documents in memory
 

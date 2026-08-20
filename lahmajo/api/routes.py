@@ -74,15 +74,10 @@ async def debug_search(query: str, use_hybrid: bool = True):
                 # Both vector_index and BM25 are indexes - vector_index is the semantic index,
                 # and BM25 index is created from the provider factory
                 hybrid_retriever = HybridRetriever(vector_index, all_docs)
-                query_lower = query.lower()
-                is_name_query = any(word.isupper() or len(word) > 8 for word in query.split())
-                
-                if is_name_query or len(query.split()) <= 3:
-                    bm25_weight, vector_weight = 0.6, 0.4
-                else:
-                    bm25_weight, vector_weight = 0.4, 0.6
-                
-                results = hybrid_retriever.search(query, k=15, bm25_weight=bm25_weight, vector_weight=vector_weight)
+                # Combined via Reciprocal Rank Fusion (RRF) for the Python-side path (see
+                # HybridRetriever.search()); bm25_weight/vector_weight are only consulted
+                # when ES native hybrid search is active.
+                results = hybrid_retriever.search(query, k=15)
                 filtered_results = [(doc, score) for doc, score in results if len(doc.page_content.strip()) >= 100]
                 search_type = "hybrid"
             except Exception as e:

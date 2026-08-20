@@ -20,9 +20,9 @@ The system uses **hybrid search**, which is the standard approach for production
 
 - **BM25 (Keyword Matching)**: Excellent for exact matches, names, keywords
 - **Vector Search (Semantic)**: Good for semantic similarity and understanding
-- **Weighted Combination**: 
-  - Name queries: 60% BM25, 40% Vector (prioritizes exact matches)
-  - Semantic queries: 40% BM25, 60% Vector (prioritizes meaning)
+- **Combination**:
+  - **In-memory / rank-bm25 (default)**: results are combined via **Reciprocal Rank Fusion (RRF)** — each candidate's BM25 rank and vector-search rank are fused into a single score, so the combination only depends on relative ranking, not on raw score magnitude (which isn't comparable across BM25 and vector scores, or even consistent in "higher/lower is better" direction across vector store implementations).
+  - **Elasticsearch native hybrid** (`VECTOR_INDEX_PROVIDER=elasticsearch` + `BM25_PROVIDER=elasticsearch`): ES combines BM25 and kNN scores at the query level using configurable boost weights (default 40% BM25 / 60% vector).
 
 This approach solves the problem where pure vector search struggles with exact name/keyword matching, as embeddings aren't always good at capturing exact matches.
 

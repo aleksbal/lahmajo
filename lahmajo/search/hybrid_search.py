@@ -113,24 +113,28 @@ class HybridRetriever:
             return None
     
     def search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         k: int = 10,
         bm25_weight: float = 0.4,
         vector_weight: float = 0.6
     ) -> List[Tuple[Document, float]]:
         """
         Perform hybrid search combining BM25 and vector search.
-        
-        If ES native hybrid is available, uses single ES query for better performance.
-        Otherwise, combines results from separate queries in Python.
-        
+
+        If ES native hybrid is available, uses single ES query for better performance,
+        combining scores via the given weights at the query level.
+        Otherwise, combines results from separate BM25 and vector queries using
+        Reciprocal Rank Fusion (RRF) - see reciprocal_rank_fusion() below.
+
         Args:
             query: Search query
             k: Number of results to return
-            bm25_weight: Weight for BM25 scores (0-1)
-            vector_weight: Weight for vector scores (0-1)
-            
+            bm25_weight: Weight for BM25 scores (0-1). Only used for ES native hybrid;
+                the Python-side RRF fallback combines by rank, not score magnitude,
+                so it doesn't need (or use) these weights.
+            vector_weight: Weight for vector scores (0-1). See bm25_weight above.
+
         Returns:
             List of (document, combined_score) tuples, sorted by score (higher is better)
         """
@@ -144,74 +148,32 @@ class HybridRetriever:
                     # If native hybrid fails, fall back to Python-side combination
                     import logging
                     logging.warning(f"ES native hybrid search failed, falling back to Python-side combination: {e}")
-        
-        # Fallback to Python-side combination
-        # Get top candidates from each method (retrieve more than k to allow for better combination)
+
+        # Fallback to Python-side combination via Reciprocal Rank Fusion (RRF).
+        # RRF combines by each list's rank order rather than raw score magnitude, which
+        # avoids having to know whether a given provider's score is a similarity (higher
+        # is better, e.g. LangChain's InMemoryVectorStore) or a distance (lower is better) -
+        # a distinction a naive weighted-average of normalized scores gets wrong in practice.
+        #
+        # Get top candidates from each method (retrieve more than k to allow for better fusion)
         # Using 2k to ensure we have enough candidates to combine, but not all documents
         candidate_count = max(k * 2, 20)  # At least 2k, minimum 20
-        
-        # BM25 search (keyword matching) - only get top candidates
+
+        # BM25 search (keyword matching) - already sorted best-first
         bm25_results = self.bm25_index.search(query, top_k=candidate_count)
-        
-        # Normalize BM25 scores to 0-1 range
-        bm25_scores_dict = {}
-        if bm25_results:
-            max_score = max(score for _, score in bm25_results) if bm25_results else 0
-            if max_score > 0:
-                bm25_scores_dict = {
-                    doc.page_content: score / max_score
-                    for doc, score in bm25_results
-                }
-            else:
-                bm25_scores_dict = {doc.page_content: 0.0 for doc, _ in bm25_results}
-        
-        # Vector search (semantic similarity) - only get top candidates
-        vector_scores_dict = {}
-        vector_docs = []
+
+        # Vector search (semantic similarity) - already sorted best-first
         try:
             vector_results = self.vector_index.similarity_search_with_score(query, k=candidate_count)
-            # Create a mapping from document content to normalized similarity score
-            # Note: vector scores are distances (lower = better), so we convert to similarity
-            if vector_results:
-                # Find max distance for normalization
-                max_distance = max(abs(score) for _, score in vector_results) if vector_results else 1.0
-                if max_distance > 0:
-                    for doc, score in vector_results:
-                        # Convert distance to similarity (normalized 0-1)
-                        similarity = 1.0 / (1.0 + abs(score) / max_distance)
-                        vector_scores_dict[doc.page_content] = similarity
-                        vector_docs.append(doc)
-        except:
-            # Fallback if similarity_search_with_score not available
-            vector_results = self.vector_index.similarity_search(query, k=candidate_count)
-            for doc in vector_results:
-                vector_scores_dict[doc.page_content] = 0.5  # Default similarity
-                vector_docs.append(doc)
-        
-        # Get unique documents from both result sets
-        candidate_docs = {}
-        for doc, _ in bm25_results:
-            candidate_docs[doc.page_content] = doc
-        for doc in vector_docs:
-            candidate_docs[doc.page_content] = doc
-        
-        # Combine scores using weighted average (only for candidate documents)
-        combined_scores = []
-        for content, doc in candidate_docs.items():
-            # Get BM25 score (normalized 0-1, default 0 if not in BM25 results)
-            bm25_score = bm25_scores_dict.get(content, 0.0)
-            # Get vector score (normalized 0-1, default 0 if not in vector results)
-            vector_score = vector_scores_dict.get(content, 0.0)
-            
-            # Weighted combination
-            combined_score = (bm25_weight * bm25_score) + (vector_weight * vector_score)
-            combined_scores.append((doc, combined_score))
-        
-        # Sort by combined score (higher is better)
-        combined_scores.sort(key=lambda x: x[1], reverse=True)
-        
+        except Exception:
+            # Fallback if similarity_search_with_score not available; RRF only needs rank
+            # order, so a placeholder score is fine here.
+            vector_results = [(doc, 0.0) for doc in self.vector_index.similarity_search(query, k=candidate_count)]
+
+        fused_results = reciprocal_rank_fusion(bm25_results, vector_results)
+
         # Return top k
-        return combined_scores[:k]
+        return fused_results[:k]
 
 
 def reciprocal_rank_fusion(
