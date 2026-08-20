@@ -16,6 +16,7 @@ from lahmajo.services.ingestion_service import (
 )
 from lahmajo.indexes.state import get_vector_index, get_all_documents
 from lahmajo.search.hybrid_search import HybridRetriever
+from lahmajo.search.rerank_provider import get_rerank_provider, LLMRerankProvider
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -62,12 +63,17 @@ async def ask_endpoint(request: AskRequest):
 
 
 @app.get("/debug/search")
-async def debug_search(query: str, use_hybrid: bool = True):
+async def debug_search(query: str, use_hybrid: bool = True, use_rerank: bool = False):
     """Debug endpoint to test vector store search directly."""
     try:
         vector_index = get_vector_index()
         all_docs = get_all_documents()
-        
+
+        # Fetch a larger candidate pool when reranking so it has more to choose from;
+        # the final results list is still capped at 15 either way.
+        RESULT_COUNT = 15
+        candidate_k = 20 if use_rerank else RESULT_COUNT
+
         # Use hybrid search if available and requested
         if use_hybrid and all_docs and len(all_docs) > 0:
             try:
@@ -77,33 +83,48 @@ async def debug_search(query: str, use_hybrid: bool = True):
                 # Combined via Reciprocal Rank Fusion (RRF) for the Python-side path (see
                 # HybridRetriever.search()); bm25_weight/vector_weight are only consulted
                 # when ES native hybrid search is active.
-                results = hybrid_retriever.search(query, k=15)
+                results = hybrid_retriever.search(query, k=candidate_k)
                 filtered_results = [(doc, score) for doc, score in results if len(doc.page_content.strip()) >= 100]
                 search_type = "hybrid"
             except Exception as e:
                 logging.warning(f"Hybrid search failed: {e}, falling back to vector")
                 use_hybrid = False
-        
+
         if not use_hybrid or not all_docs:
             # Fallback to vector-only search
             try:
-                results_with_scores = vector_index.similarity_search_with_score(query, k=15)
+                results_with_scores = vector_index.similarity_search_with_score(query, k=candidate_k)
                 filtered_results = [(doc, float(score)) for doc, score in results_with_scores if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"
             except:
-                results = vector_index.similarity_search(query, k=15)
+                results = vector_index.similarity_search(query, k=candidate_k)
                 filtered_results = [(doc, None) for doc in results if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"
-        
+
+        # Rerank if requested. Uses RERANK_PROVIDER if one is configured, otherwise
+        # explicitly uses the LLM reranker for this call regardless of global config -
+        # this is a debug toggle, so it should let you preview reranking even when
+        # RERANK_PROVIDER=none globally.
+        reranked = False
+        if use_rerank:
+            try:
+                rerank_provider = get_rerank_provider() or LLMRerankProvider()
+                candidates = [doc for doc, _ in filtered_results]
+                filtered_results = rerank_provider.rerank(query, candidates, top_k=RESULT_COUNT)
+                reranked = True
+            except Exception as e:
+                logging.warning(f"Reranking failed: {e}, using original order")
+
         # Get all unique sources
         all_sources = set()
         for doc, _ in filtered_results:
             source = doc.metadata.get("source", "unknown")
             all_sources.add(source)
-        
+
         return JSONResponse({
             "query": query,
             "search_type": search_type,
+            "reranked": reranked,
             "results_count": len(filtered_results),
             "sources_found": sorted(list(all_sources)),
             "results": [

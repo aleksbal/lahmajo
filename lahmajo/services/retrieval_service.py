@@ -6,24 +6,30 @@ from langchain_core.documents import Document
 
 from lahmajo.indexes.state import get_vector_index, get_all_documents
 from lahmajo.search.hybrid_search import HybridRetriever
+from lahmajo.search.rerank_provider import get_rerank_provider
 
 logger = logging.getLogger(__name__)
 
 
 def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
     """
-    Retrieve relevant documents for a query using hybrid search.
-    
+    Retrieve relevant documents for a query using hybrid search, optionally reranked.
+
     Args:
         query: Search query
         k: Number of documents to return
-        
+
     Returns:
         Tuple of (serialized_context, documents)
     """
     vector_index = get_vector_index()
     all_docs = get_all_documents()
-    
+
+    # Reranking is opt-in (RERANK_PROVIDER env var, default "none"). When enabled, fetch a
+    # larger candidate pool so the reranker has more to work with than the final k.
+    rerank_provider = get_rerank_provider()
+    candidate_k = 20 if rerank_provider else 10
+
     # Use hybrid search if we have documents indexed, otherwise fall back to vector only
     if all_docs and len(all_docs) > 0:
         try:
@@ -35,7 +41,7 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
             # Combined via Reciprocal Rank Fusion (RRF) for the Python-side path (see
             # HybridRetriever.search()); bm25_weight/vector_weight are only consulted
             # when ES native hybrid search is active.
-            results = hybrid_retriever.search(query, k=10)
+            results = hybrid_retriever.search(query, k=candidate_k)
             top_docs = [doc for doc, score in results]
 
             logger.info(f"Hybrid search - Query: {query}")
@@ -45,25 +51,35 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
             logger.warning(f"Hybrid search failed, falling back to vector search: {e}")
             # Fallback to vector search
             try:
-                retrieved_with_scores = vector_index.similarity_search_with_score(query, k=10)
+                retrieved_with_scores = vector_index.similarity_search_with_score(query, k=candidate_k)
                 top_docs = [doc for doc, score in retrieved_with_scores]
             except:
-                top_docs = vector_index.similarity_search(query, k=10)
+                top_docs = vector_index.similarity_search(query, k=candidate_k)
     else:
         # Fallback to vector-only search
         try:
-            retrieved_with_scores = vector_index.similarity_search_with_score(query, k=10)
+            retrieved_with_scores = vector_index.similarity_search_with_score(query, k=candidate_k)
             top_docs = [doc for doc, score in retrieved_with_scores]
         except:
-            top_docs = vector_index.similarity_search(query, k=10)
-    
+            top_docs = vector_index.similarity_search(query, k=candidate_k)
+
     # Filter out very small chunks
     MIN_CHARS = 100
     filtered_docs = [doc for doc in top_docs if len(doc.page_content.strip()) >= MIN_CHARS]
-    
-    # Take top k
-    top_docs = filtered_docs[:k]
-    
+
+    # Rerank the filtered candidates if a rerank provider is configured, otherwise keep
+    # them in hybrid-search order.
+    if rerank_provider:
+        try:
+            reranked = rerank_provider.rerank(query, filtered_docs, top_k=k)
+            top_docs = [doc for doc, score in reranked]
+            logger.info(f"Reranked {len(filtered_docs)} candidates down to {len(top_docs)}")
+        except Exception as e:
+            logger.warning(f"Reranking failed, falling back to hybrid-search order: {e}")
+            top_docs = filtered_docs[:k]
+    else:
+        top_docs = filtered_docs[:k]
+
     # Debug logging - clarify chunks vs documents
     logger.info(f"Retrieval query: {query}")
     logger.info(f"Retrieved {len(top_docs)} chunks (from {len(set(doc.metadata.get('source', 'unknown') for doc in top_docs))} unique document(s))")

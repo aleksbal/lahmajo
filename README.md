@@ -241,13 +241,33 @@ export ELASTICSEARCH_USE_NATIVE_HYBRID=true  # Optional, auto-detected when both
 
 **Benefits over Python-side combination:**
 - Single network round trip instead of two
-- ES native score combination (more sophisticated than weighted average)
+- ES native score combination (query-level boost weights) instead of the Python-side path's Reciprocal Rank Fusion
 - Better performance at scale
 - No need to keep all documents in memory
 
 **Note:** The system automatically detects when both providers are ES-based and uses native hybrid search. You can also explicitly enable it with `ELASTICSEARCH_USE_NATIVE_HYBRID=true`.
 
 Additional vector index providers (e.g., Pinecone, Weaviate) can be added by implementing the `VectorIndexProvider` interface in `lahmajo/indexes/vector_provider.py`.
+
+### Rerank Provider Configuration
+
+The system supports an optional reranking pass over retrieved candidates, applied after hybrid search and before the results are sent to the LLM. **Disabled by default** - existing behavior/latency is unchanged unless you opt in.
+
+**None (default):**
+```bash
+export RERANK_PROVIDER=none
+# No additional configuration needed - hybrid search's own ordering is used as-is
+```
+
+**LLM-based:**
+```bash
+export RERANK_PROVIDER=llm
+# No additional configuration needed - reuses the already-configured LLM_PROVIDER
+```
+
+When enabled, a larger candidate pool (20 instead of 10) is fetched from hybrid search so the reranker has more to work with, then the configured LLM is asked to reorder them by relevance to the query before the final top-k is selected. If the LLM's response can't be parsed into a valid ranking, or the call fails, retrieval falls back to hybrid search's own order rather than failing the request.
+
+Additional rerank providers (e.g., a local cross-encoder model) can be added by implementing the `RerankProvider` interface in `lahmajo/search/rerank_provider.py`.
 
 ## Usage
 
@@ -293,7 +313,7 @@ Then open `http://localhost:8000` in your browser.
 - `GET /` - Web UI
 - `POST /ask` - Ask a question (JSON: `{"question": "your question"}`)
 - `POST /ingest` - Ingest documents (Form data: `url`, `files`, `chunking_strategy`)
-- `GET /debug/search?query=...` - Debug endpoint to test retrieval directly
+- `GET /debug/search?query=...&use_hybrid=true&use_rerank=false` - Debug endpoint to test retrieval directly. `use_rerank=true` previews reranked results for this one call (uses `RERANK_PROVIDER` if configured, otherwise falls back to the LLM reranker) regardless of the global `RERANK_PROVIDER` setting.
 
 ## How It Works
 
