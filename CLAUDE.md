@@ -83,7 +83,9 @@ lahmajo/
 │   ├── vector_provider.py        # VectorIndexProvider ABC + in_memory / elasticsearch impls (factory: get_vector_index_provider)
 │   ├── bm25_provider.py          # BM25Provider ABC + rank_bm25 / elasticsearch impls (factory: get_bm25_provider)
 │   └── elasticsearch_hybrid_provider.py  # ES-native single-query hybrid (BM25 `match` + `knn` in one request)
-├── search/hybrid_search.py  # HybridRetriever: combines BM25 + vector results (weighted score or RRF)
+├── search/
+│   ├── hybrid_search.py          # HybridRetriever: combines BM25 + vector results (RRF, or ES native hybrid)
+│   └── rerank_provider.py        # RerankProvider ABC + none/llm impls (factory: get_rerank_provider)
 ├── llm/
 │   ├── llm_provider.py           # get_llm() factory: ollama_local / ollama_cloud / openai
 │   └── embedding_provider.py     # get_embeddings() factory, same provider set
@@ -92,11 +94,11 @@ lahmajo/
 
 ### Provider pattern (used throughout)
 
-Every pluggable component (LLM, embeddings, vector index, BM25 index) is selected purely via environment variables at call time through a `get_x()` factory function that reads `os.getenv(...)`, e.g. `LLM_PROVIDER`, `EMBEDDING_PROVIDER`, `VECTOR_INDEX_PROVIDER`, `BM25_PROVIDER`. Each provider implements an ABC interface (`VectorIndexProvider`, `BM25Provider`). When adding a new provider, implement the interface and add a branch to the corresponding factory function — see README.md "Configuration" section for the full env-var reference and defaults.
+Every pluggable component (LLM, embeddings, vector index, BM25 index, reranking) is selected purely via environment variables at call time through a `get_x()` factory function that reads `os.getenv(...)`, e.g. `LLM_PROVIDER`, `EMBEDDING_PROVIDER`, `VECTOR_INDEX_PROVIDER`, `BM25_PROVIDER`, `RERANK_PROVIDER`. Each provider implements an ABC interface (`VectorIndexProvider`, `BM25Provider`, `RerankProvider`). When adding a new provider, implement the interface and add a branch to the corresponding factory function — see README.md "Configuration" section for the full env-var reference and defaults.
 
 ### Elasticsearch native hybrid search
 
-When `VECTOR_INDEX_PROVIDER=elasticsearch` AND `BM25_PROVIDER=elasticsearch` (optionally forced via `ELASTICSEARCH_USE_NATIVE_HYBRID=true`), `HybridRetriever` detects this and delegates to `ElasticsearchHybridProvider`, which issues a single ES query (`bool` query combining `match` and `knn`) instead of two separate BM25 + vector queries combined in Python. This is the auto-detected fast path; mixed providers (e.g. ES vector + `rank_bm25`) fall back to Python-side weighted-score combination in `HybridRetriever.search()`.
+When `VECTOR_INDEX_PROVIDER=elasticsearch` AND `BM25_PROVIDER=elasticsearch` (optionally forced via `ELASTICSEARCH_USE_NATIVE_HYBRID=true`), `HybridRetriever` detects this and delegates to `ElasticsearchHybridProvider`, which issues a single ES query (`bool` query combining `match` and `knn`) instead of two separate BM25 + vector queries combined in Python. This is the auto-detected fast path; mixed providers (e.g. ES vector + `rank_bm25`) fall back to Python-side Reciprocal Rank Fusion (RRF) in `HybridRetriever.search()`.
 
 ### Index state (`indexes/state.py`)
 
@@ -104,11 +106,17 @@ The vector index is a lazily-initialized module-level singleton (`get_vector_ind
 
 ### Adaptive chunking (`ingestion/processing.py`)
 
-Document type (structured vs. long-form) is auto-detected during ingestion to pick chunk size: ~300 chars/50 overlap for structured docs (resumes, technical docs) vs. ~600 chars/100 overlap for long-form content, using `RecursiveCharacterTextSplitter` by default (a `Semantic` strategy using embeddings-based breakpoints is also selectable). See README.md "Adaptive Chunking" / "Chunking Strategies" for the full rationale.
+Document type (structured vs. long-form) is auto-detected during ingestion to pick chunk size: ~300 chars/50 overlap for structured docs (resumes, technical docs) vs. ~600 chars/100 overlap for long-form content, using `RecursiveCharacterTextSplitter` by default (a `Semantic` strategy using embeddings-based breakpoints is also selectable). Detection is `_detect_document_type()` — scores on total size, the fraction of non-blank lines that look like list/bullet items (anchored at line start), and average line length; deliberately *not* "contains a hyphen anywhere in the first 500 chars" (an earlier version of this heuristic did that and misfired on ordinary hyphenated prose — don't reintroduce it). The detection result is logged unconditionally via `logging` (not gated on `show_progress`), since the real `/ingest` API path always calls this with `show_progress=False`. See README.md "Adaptive Chunking" / "Chunking Strategies" for the full rationale.
 
-### Query-time hybrid weighting
+### Query-time hybrid combination, dedup, and reranking
 
-`HybridRetriever.search()` combines BM25 and vector scores with configurable weights (default 40% BM25 / 60% vector for semantic queries; the caller can flip this to 60/40 for name/keyword-style queries — see README.md "Hybrid Search"). A separate `reciprocal_rank_fusion()` helper implements RRF as an alternative combination method.
+`HybridRetriever.search()`'s Python-side path combines BM25 and vector candidates via `reciprocal_rank_fusion()` — fusion by each list's rank order, not raw score magnitude, since BM25 scores and vector scores aren't on a comparable scale and different vector providers don't even agree on whether a higher or lower score means "more similar" (a naive weighted-average of normalized scores got this wrong for the default in-memory provider — don't reintroduce that). The ES native hybrid path (previous section) still combines by query-level boost weights (`bm25_weight`/`vector_weight` params on `search()`), since that's a different, ES-internal combination mechanism.
+
+`retrieve_context()` (`services/retrieval_service.py`) then dedupes: `_dedupe_chunks()` drops chunks that are near-duplicates (`difflib.SequenceMatcher` ratio ≥ 0.8) of an already-kept chunk *from the same source* — catches adjacent, overlapping adaptive-chunking windows surfacing as two near-identical candidates; different sources with similar text are left alone.
+
+`retrieve_context()` optionally reranks the deduped candidates afterward via `get_rerank_provider()` — opt-in, `RERANK_PROVIDER=none` by default. When enabled (`RERANK_PROVIDER=llm`), a larger candidate pool (20 instead of 10) is fetched so the reranker has more to choose from, then `LLMRerankProvider` asks the already-configured LLM to reorder them; a malformed/failed rerank response falls back to hybrid search's own order rather than erroring.
+
+Both `use_hybrid` (bool) and `use_rerank` (`Optional[bool]`, `None` = defer to `RERANK_PROVIDER`) are per-call overrides threaded from `retrieve_context()` up through `create_rag_agent()`/`ask_question()` (`rag_service.py`) to the `/ask` and `/debug/search` API endpoints and the GUI's "Hybrid search"/"Rerank results" checkboxes (`static/index.html`) — so retrieval behavior can be compared per-request without restarting the server or touching env vars.
 
 ## Notes for editing
 

@@ -1,6 +1,8 @@
 # lahmajo/ingestion/processing.py
 import bs4
+import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -17,6 +19,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from lahmajo.llm import get_embeddings
 from lahmajo.indexes.vector_provider import get_vector_index_provider, VectorIndexProvider
+
+logger = logging.getLogger(__name__)
+
+# Matches a line that *starts* with a bullet/list marker: "•", "▪", "●", "‣", "∙",
+# "-", "*", or a numbered/lettered list item ("1.", "2)", "a.", ...). Deliberately
+# anchored to line start (not "contains a hyphen anywhere in the first 500 chars",
+# which matches almost any English text - hyphenated words, em dashes, dates).
+_BULLET_LINE_RE = re.compile(r'^\s*(?:[•▪●‣∙*-]|\d+[.)]|[a-zA-Z][.)])\s+')
 
 
 def build_vector_store(show_progress: bool = True) -> VectorIndexProvider:
@@ -69,6 +79,60 @@ def _get_semantic_chunker_embeddings():
     return get_embeddings()
 
 
+def _detect_document_type(docs: list[Document]) -> tuple[bool, dict]:
+    """
+    Heuristically classify a batch of ingested documents as "structured"
+    (resume/CV-like: short, list-heavy) vs. "long-form" (prose-heavy), to pick
+    chunk size/overlap.
+
+    Looks at:
+    - total size (structured docs are typically short, e.g. CVs)
+    - the fraction of non-blank lines that actually look like list/bullet items
+      (anchored at line start - not "any hyphen anywhere in the first 500 chars",
+      which fires on virtually any English text with a hyphenated word or an
+      em dash)
+    - average line length (structured docs tend to have many short lines;
+      long-form prose has fewer, longer paragraph-wrapped lines)
+
+    Returns (is_structured, stats) - stats is included so callers can log why a
+    document was classified the way it was.
+    """
+    if not docs:
+        return False, {}
+
+    total_chars = sum(len(d.page_content) for d in docs)
+    non_blank_lines = [
+        line
+        for d in docs
+        for line in d.page_content.splitlines()
+        if line.strip()
+    ]
+
+    if not non_blank_lines:
+        return False, {"total_chars": total_chars, "non_blank_lines": 0}
+
+    bullet_lines = sum(1 for line in non_blank_lines if _BULLET_LINE_RE.match(line))
+    bullet_ratio = bullet_lines / len(non_blank_lines)
+    avg_line_length = sum(len(line) for line in non_blank_lines) / len(non_blank_lines)
+
+    is_short = total_chars < 15000
+    is_list_heavy = bullet_ratio >= 0.15  # ~1 in 7 non-blank lines looks like a list item
+    is_line_dense = avg_line_length < 80  # many short lines, not flowing paragraphs
+
+    is_structured = is_short and (is_list_heavy or is_line_dense)
+
+    stats = {
+        "total_chars": total_chars,
+        "non_blank_lines": len(non_blank_lines),
+        "bullet_ratio": round(bullet_ratio, 3),
+        "avg_line_length": round(avg_line_length, 1),
+        "is_short": is_short,
+        "is_list_heavy": is_list_heavy,
+        "is_line_dense": is_line_dense,
+    }
+    return is_structured, stats
+
+
 def _process_documents(
     docs: list[Document], 
     semantic_chunker_embeddings=None, 
@@ -96,16 +160,10 @@ def _process_documents(
     # For CVs/resumes: Smaller chunks (200-400 chars) enable granular retrieval
     # For long-form content: Larger chunks (500-800 chars) preserve context
     if not use_semantic:
-        # Detect if this looks like a well structured document
-        # CVs typically have sections, bullet points, and are relatively short
-        is_structured_doc = False
-        if docs:
-            total_chars = sum(len(d.page_content) for d in docs)
-            # CVs are usually 2000-10000 chars, have many newlines, bullet points
-            has_bullets = any('•' in d.page_content or '-' in d.page_content[:500] for d in docs)
-            has_sections = any('\n\n' in d.page_content or d.page_content.count('\n') > 10 for d in docs)
-            is_structured_doc = (total_chars < 15000) and (has_bullets or has_sections)
-        
+        # Detect if this looks like a well structured document (CV/resume-like)
+        # vs. long-form prose - see _detect_document_type() for the heuristic.
+        is_structured_doc, detection_stats = _detect_document_type(docs)
+
         if is_structured_doc:
             # Smaller chunks for CVs/resumes - enables granular retrieval
             chunk_size = 300
@@ -116,7 +174,14 @@ def _process_documents(
             chunk_size = 600
             chunk_overlap = 100
             doc_type = "long-form content"
-        
+
+        # Always logged (not just when show_progress=True) - the real /ingest API
+        # path calls this with show_progress=False, so without this log line
+        # there was no way to see which branch fired outside the CLI.
+        logger.info(
+            f"Chunking: detected '{doc_type}' -> chunk_size={chunk_size}, "
+            f"overlap={chunk_overlap} (stats: {detection_stats})"
+        )
         if show_progress:
             print(f"  Detected: {doc_type}, using chunk_size={chunk_size}, overlap={chunk_overlap}")
         
