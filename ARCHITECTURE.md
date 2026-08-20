@@ -5,30 +5,34 @@
 The project follows a clean, domain-driven, layered structure — each layer only calls the one below it:
 
 ```
-lahmajo/
-├── lahmajo/               # Main package (project name)
-│   ├── api/               # API layer - HTTP endpoints
-│   │   └── routes.py
-│   ├── services/          # Service layer - business logic
-│   │   ├── rag_service.py
-│   │   ├── retrieval_service.py
-│   │   └── ingestion_service.py
-│   ├── ingestion/         # Ingestion layer - document processing
-│   │   └── processing.py
-│   ├── indexes/           # Index layer - search indexes
-│   │   ├── state.py
-│   │   ├── vector_provider.py
-│   │   ├── bm25_provider.py
-│   │   └── elasticsearch_hybrid_provider.py
-│   ├── search/            # Search layer - retrieval algorithms
-│   │   ├── hybrid_search.py
-│   │   └── rerank_provider.py
-│   ├── llm/               # Provider layer - model abstraction
-│   │   ├── llm_provider.py
-│   │   └── embedding_provider.py
-│   └── cli.py             # CLI entry point
+lahmajo/                   # repo root
+├── pyproject.toml         # packaging (src/ layout, `pip install -e .`)
+├── src/
+│   └── lahmajo/            # Main package (project name)
+│       ├── api/               # API layer - HTTP endpoints
+│       │   └── routes.py
+│       ├── services/          # Service layer - business logic
+│       │   ├── rag_service.py
+│       │   ├── retrieval_service.py
+│       │   └── ingestion_service.py
+│       ├── ingestion/         # Ingestion layer - document processing
+│       │   └── processing.py
+│       ├── indexes/           # Index layer - search indexes
+│       │   ├── state.py
+│       │   ├── vector_provider.py
+│       │   ├── bm25_provider.py
+│       │   └── elasticsearch_hybrid_provider.py
+│       ├── search/            # Search layer - retrieval algorithms
+│       │   ├── hybrid_search.py
+│       │   └── rerank_provider.py
+│       ├── llm/               # Provider layer - model abstraction
+│       │   ├── llm_provider.py
+│       │   └── embedding_provider.py
+│       └── cli.py             # CLI entry point
 ├── tests/                 # Unit tests
 ├── static/                # Static files (HTML UI)
+├── docker/                # Dockerfile, docker-compose.yml
+├── docs/                  # Supplementary docs (not the layer/data-flow reference - that's this file)
 └── requirements.txt       # Dependencies
 ```
 
@@ -69,14 +73,14 @@ lahmajo/
 
 ## Layer Details
 
-### API Layer (`lahmajo/api/`)
+### API Layer (`src/lahmajo/api/`)
 **Responsibility**: HTTP interface only
 - Route handlers, request/response validation, error handling
 - **No business logic**
 
 **Files**: `routes.py` — all FastAPI endpoints
 
-### Service Layer (`lahmajo/services/`)
+### Service Layer (`src/lahmajo/services/`)
 **Responsibility**: Business logic orchestration
 - Coordinates between API, ingestion, index, and search layers
 - **No direct data access**
@@ -86,13 +90,13 @@ lahmajo/
 - `retrieval_service.py` — document retrieval operations
 - `ingestion_service.py` — document ingestion workflow
 
-### Ingestion Layer (`lahmajo/ingestion/`)
+### Ingestion Layer (`src/lahmajo/ingestion/`)
 **Responsibility**: Document ingestion pipeline (loading, chunking, embedding)
 - **No business logic**
 
 **Files**: `processing.py`
 
-### Index Layer (`lahmajo/indexes/`)
+### Index Layer (`src/lahmajo/indexes/`)
 **Responsibility**: Search index providers and state management
 - **Vector Index**: stores embedded documents for semantic search
 - **BM25 Index**: keyword search index
@@ -105,7 +109,7 @@ lahmajo/
 - `bm25_provider.py` — BM25 index provider (`rank_bm25`, `elasticsearch`, ...)
 - `elasticsearch_hybrid_provider.py` — ES native hybrid search provider
 
-### Search Layer (`lahmajo/search/`)
+### Search Layer (`src/lahmajo/search/`)
 **Responsibility**: Search algorithms that use the indexes
 - Combines vector (semantic) + BM25 (keyword) search
 - Optional reranking pass over retrieved candidates
@@ -115,7 +119,7 @@ lahmajo/
 - `hybrid_search.py` — combines BM25 + vector search (RRF for the Python-side path; ES native hybrid when both providers are Elasticsearch-based)
 - `rerank_provider.py` — pluggable reranking of hybrid search's candidates (`none` default, `llm` reuses the configured LLM provider)
 
-### Provider Layer (`lahmajo/llm/`)
+### Provider Layer (`src/lahmajo/llm/`)
 **Responsibility**: Model provider abstraction
 - **Embedding Models**: convert text to vectors (used by the vector index)
 - **LLM Models**: generate text responses

@@ -36,7 +36,7 @@ python -m lahmajo.cli
 ./docker-dev.sh reset
 ```
 
-Note: inside the container uvicorn binds to port 8080 (see `Dockerfile` CMD); docker-compose maps host `8000` → container `8080`.
+Note: `Dockerfile`/`docker-compose.yml` live under `docker/` (see `docker-dev.sh`, which passes `-f docker/docker-compose.yml`); `.dockerignore` stays at the repo root since Docker resolves it relative to the build context, not the Dockerfile's location. Inside the container uvicorn binds to port 8080 (see `docker/Dockerfile` CMD); docker-compose maps host `8000` → container `8080`.
 
 ### Tests
 
@@ -56,22 +56,23 @@ Tests use the standard library `unittest` (with `unittest.mock`), not pytest. Th
 
 ```bash
 pip install -r requirements.txt
+pip install --no-deps -e .   # registers the local package (src/ layout, see pyproject.toml)
 # optional extra, only needed for the OpenAI provider:
 pip install langchain-openai
 ```
 
-`requirements.txt` is version-pinned (resolved against Python 3.12). `langchain-elasticsearch`/`elasticsearch` are already pinned in `requirements.txt` even though ES is an opt-in provider.
+`requirements.txt` is version-pinned (resolved against Python 3.12). `langchain-elasticsearch`/`elasticsearch` are already pinned in `requirements.txt` even though ES is an opt-in provider. The package lives under `src/lahmajo/` (see "Architecture" below) and is installed editable via `pyproject.toml`; `import lahmajo...` won't resolve without the `pip install -e .` step.
 
 ### CI
 
-`.github/workflows/tests.yml` runs `python run_tests.py` on every push/PR to `main` (Python 3.12, deps from `requirements.txt`). Keep it green — this is the only automated check in the repo.
+`.github/workflows/tests.yml` runs `python run_tests.py` on every push/PR to `main` (Python 3.12, deps from `requirements.txt`, then `pip install --no-deps -e .` to register the `src/` package). Keep it green — this is the only automated check in the repo.
 
 ## Architecture
 
 The codebase is a strict layered pipeline, each layer only calling the one below it — API → Services → Ingestion/Index/Search → LLM providers. Preserve this separation when adding code (no business logic in `api/`, no direct index access from `api/`, etc.).
 
 ```
-lahmajo/
+src/lahmajo/                 # package root - see pyproject.toml for the src/ layout
 ├── api/routes.py           # FastAPI endpoints only (HTTP in/out, no business logic)
 ├── services/                # Business logic orchestration
 │   ├── rag_service.py           # Builds the LangChain agent, answers questions
@@ -91,6 +92,8 @@ lahmajo/
 │   └── embedding_provider.py     # get_embeddings() factory, same provider set
 └── cli.py                   # CLI entry point
 ```
+
+Repo root also has `docker/` (Dockerfile, docker-compose.yml), `docs/` (supplementary docs, e.g. `docs/EMBEDDINGS_EXPLANATION.md`), and `pyproject.toml` (packaging).
 
 ### Provider pattern (used throughout)
 
@@ -123,3 +126,5 @@ Both `use_hybrid` (bool) and `use_rerank` (`Optional[bool]`, `None` = defer to `
 - `ARCHITECTURE.md` is the single source of truth for the layering/data-flow diagrams; README.md links to it instead of repeating it. Update `ARCHITECTURE.md` if you change layer boundaries — don't let a second copy of the diagram grow back in README.
 - `indexes/state.py` has a duplicated `get_vector_store()` function definition (harmless — the second silently shadows the first) — be aware when editing that file.
 - Config is entirely environment-variable driven (no config files); see `.env.docker` for the full set used by the Docker Compose setup and README.md for local-dev defaults.
+- `docs/EMBEDDINGS_EXPLANATION.md` explains the two separate embedding-model instances used during ingestion (`semantic_chunker_embeddings` vs. the document embedding model) — read it before touching `ingestion/processing.py`'s embedding calls.
+- `GET /` (`api/routes.py`) locates `static/index.html` via a `parents[3]` traversal from `__file__`, which only holds for an editable install (`pip install -e .` - how this project is actually installed, locally and in `docker/Dockerfile`). `LAHMAJO_STATIC_DIR` overrides it for a non-editable `pip install .`, where `static/` isn't bundled into the installed package. See README.md "Static UI Directory".
