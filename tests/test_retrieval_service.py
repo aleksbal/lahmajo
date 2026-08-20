@@ -135,6 +135,39 @@ class TestDedupeChunks(unittest.TestCase):
         b = "Completely unrelated content about tax filing deadlines. " * 5
         self.assertFalse(_is_near_duplicate(a, b))
 
+    def test_is_near_duplicate_false_for_shared_vocabulary_different_content(self):
+        # Regression test (PR #10 review): SequenceMatcher.quick_ratio() is only an
+        # upper bound based on shared character/vocabulary counts, not actual
+        # matching sequences - two sentences built from the same words in a
+        # different order can score ~0.95 on quick_ratio() despite saying
+        # something different, which would wrongly drop a distinct chunk.
+        # ratio() (real sequence alignment) correctly scores this well below the
+        # dedupe threshold.
+        a = (
+            "The company reported strong revenue growth in the fourth quarter "
+            "driven by cloud services and enterprise software subscriptions "
+            "across all major regions."
+        )
+        b = (
+            "Enterprise software subscriptions and cloud services across all "
+            "major regions drove strong revenue growth for the company in the "
+            "fourth quarter this year."
+        )
+        self.assertFalse(_is_near_duplicate(a, b))
+
+    def test_is_near_duplicate_true_for_long_repetitive_overlap(self):
+        # Regression test: with SequenceMatcher's default autojunk=True, any
+        # character recurring often enough in a 200+ char sequence is treated as
+        # "popular" and excluded from matching, which can silently zero out the
+        # ratio for genuinely overlapping (but repetitive) chunks. This dedupe
+        # check must disable autojunk so long overlapping windows are still
+        # caught.
+        base = "Adjacent overlapping chunk content for the dedupe test. " * 5
+        a = base
+        b = base[40:] + " unique tail text"
+        self.assertGreaterEqual(len(a), 200)
+        self.assertTrue(_is_near_duplicate(a, b))
+
     def test_dedupe_chunks_drops_near_duplicate_from_same_source(self):
         base = "Overlapping chunk text repeated for length. " * 6
         doc1 = Document(page_content=base, metadata={"source": "doc1"})

@@ -20,8 +20,19 @@ DEDUPE_SIMILARITY_THRESHOLD = 0.8
 
 
 def _is_near_duplicate(a: str, b: str, threshold: float = DEDUPE_SIMILARITY_THRESHOLD) -> bool:
-    """Cheap near-duplicate check between two chunks' text."""
-    return SequenceMatcher(None, a, b).quick_ratio() >= threshold
+    """Near-duplicate check between two chunks' text.
+
+    Uses SequenceMatcher.ratio() (real sequence alignment), not quick_ratio() -
+    quick_ratio() is only an upper bound based on shared character counts, not
+    matching sequences, so two unrelated chunks that happen to share vocabulary
+    (e.g. two differently-ordered sentences built from similar words) can score
+    above the threshold and get wrongly dropped. autojunk=False is required too:
+    with autojunk on (the default), SequenceMatcher treats any character that
+    recurs often enough in a 200+-char sequence as "popular" and excludes it from
+    matching - which silently zeroes out the ratio for genuinely overlapping
+    chunks once they're long/repetitive enough to trip that heuristic.
+    """
+    return SequenceMatcher(None, a, b, autojunk=False).ratio() >= threshold
 
 
 def _dedupe_chunks(docs: List[Document], threshold: float = DEDUPE_SIMILARITY_THRESHOLD) -> List[Document]:
