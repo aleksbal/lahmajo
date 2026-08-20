@@ -1,23 +1,34 @@
 # lahmajo/services/retrieval_service.py
 """Retrieval service - handles document retrieval using hybrid search."""
 import logging
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from langchain_core.documents import Document
 
 from lahmajo.indexes.state import get_vector_index, get_all_documents
 from lahmajo.search.hybrid_search import HybridRetriever
-from lahmajo.search.rerank_provider import get_rerank_provider
+from lahmajo.search.rerank_provider import get_rerank_provider, LLMRerankProvider
 
 logger = logging.getLogger(__name__)
 
 
-def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
+def retrieve_context(
+    query: str,
+    k: int = 8,
+    use_hybrid: bool = True,
+    use_rerank: Optional[bool] = None,
+) -> Tuple[str, List[Document]]:
     """
     Retrieve relevant documents for a query using hybrid search, optionally reranked.
 
     Args:
         query: Search query
         k: Number of documents to return
+        use_hybrid: If False, skip BM25 entirely and use vector-only search - mainly
+            useful for comparing retrieval techniques (e.g. from the GUI/API).
+        use_rerank: Per-call override for reranking. None (default) uses the
+            RERANK_PROVIDER env var. True forces reranking on for this call even if
+            RERANK_PROVIDER=none globally (falling back to the LLM reranker). False
+            forces it off even if a rerank provider is configured globally.
 
     Returns:
         Tuple of (serialized_context, documents)
@@ -25,13 +36,20 @@ def retrieve_context(query: str, k: int = 8) -> Tuple[str, List[Document]]:
     vector_index = get_vector_index()
     all_docs = get_all_documents()
 
-    # Reranking is opt-in (RERANK_PROVIDER env var, default "none"). When enabled, fetch a
-    # larger candidate pool so the reranker has more to work with than the final k.
-    rerank_provider = get_rerank_provider()
+    # Reranking is opt-in by default (RERANK_PROVIDER env var, "none" unless a per-call
+    # override says otherwise). When enabled, fetch a larger candidate pool so the
+    # reranker has more to work with than the final k.
+    if use_rerank is None:
+        rerank_provider = get_rerank_provider()
+    elif use_rerank:
+        rerank_provider = get_rerank_provider() or LLMRerankProvider()
+    else:
+        rerank_provider = None
     candidate_k = 20 if rerank_provider else 10
 
-    # Use hybrid search if we have documents indexed, otherwise fall back to vector only
-    if all_docs and len(all_docs) > 0:
+    # Use hybrid search if requested and we have documents indexed, otherwise fall back
+    # to vector only.
+    if use_hybrid and all_docs and len(all_docs) > 0:
         try:
             # Hybrid search: BM25 (keyword) + Vector (semantic)
             # Both vector_index and BM25 are indexes - vector_index is the semantic index,

@@ -26,6 +26,8 @@ app = FastAPI(title="RAG Web UI")
 
 class AskRequest(BaseModel):
     question: str
+    use_hybrid: bool = True
+    use_rerank: Optional[bool] = None  # None = use RERANK_PROVIDER env var default
 
 
 class AskResponse(BaseModel):
@@ -53,8 +55,13 @@ async def get_ui():
 async def ask_endpoint(request: AskRequest):
     """Ask a question using the RAG pipeline."""
     try:
-        logging.info(f"Question received: {request.question}")
-        answer = ask_question(request.question, show_progress=False)
+        logging.info(f"Question received: {request.question} (use_hybrid={request.use_hybrid}, use_rerank={request.use_rerank})")
+        answer = ask_question(
+            request.question,
+            show_progress=False,
+            use_hybrid=request.use_hybrid,
+            use_rerank=request.use_rerank,
+        )
         logging.info(f"Answer length: {len(answer)} characters")
         return AskResponse(answer=answer)
     except Exception as e:
