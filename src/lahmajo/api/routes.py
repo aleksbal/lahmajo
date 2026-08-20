@@ -34,9 +34,16 @@ class AskResponse(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def get_ui():
     """Serve the HTML UI."""
-    html_path = Path(__file__).parent.parent.parent / "static" / "index.html"
+    # __file__ is src/lahmajo/api/routes.py - parents[3] is the repo root
+    # (api -> lahmajo -> src -> repo root). This depth is tied to the src/
+    # layout (see pyproject.toml) - if the package moves again, update this.
+    html_path = Path(__file__).resolve().parents[3] / "static" / "index.html"
     if html_path.exists():
-        return html_path.read_text()
+        # Explicit encoding: read_text() defaults to locale.getpreferredencoding(),
+        # which is cp1252 on Windows - static/index.html is UTF-8 and contains
+        # bytes invalid in cp1252, which crashed this route with a 500 once the
+        # path lookup above actually started finding the file.
+        return html_path.read_text(encoding="utf-8")
     else:
         # Fallback HTML if file doesn't exist
         return """
