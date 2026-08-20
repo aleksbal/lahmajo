@@ -307,11 +307,12 @@ Then open `http://localhost:8000` in your browser.
 - **Ingest Documents**: Upload TXT, PDF, or MD files, or provide URLs
 - **Choose Chunking Strategy**: Select Recursive (structured docs) or Semantic (long-form) chunking
 - **Ask Questions**: Query the knowledge base and get answers based on retrieved context
+- **Retrieval Options**: Toggle hybrid search and reranking per-question (checkboxes next to the question input) without restarting the server or changing env vars
 
 ### API Endpoints
 
 - `GET /` - Web UI
-- `POST /ask` - Ask a question (JSON: `{"question": "your question"}`)
+- `POST /ask` - Ask a question (JSON: `{"question": "your question", "use_hybrid": true, "use_rerank": null}`). `use_hybrid` defaults to `true`; `use_rerank` defaults to `null`, which defers to the `RERANK_PROVIDER` env var — pass `true`/`false` to force it on/off for this call.
 - `POST /ingest` - Ingest documents (Form data: `url`, `files`, `chunking_strategy`)
 - `GET /debug/search?query=...&use_hybrid=true&use_rerank=false` - Debug endpoint to test retrieval directly. `use_rerank=true` previews reranked results for this one call (uses `RERANK_PROVIDER` if configured, otherwise falls back to the LLM reranker) regardless of the global `RERANK_PROVIDER` setting.
 
@@ -331,15 +332,16 @@ Then open `http://localhost:8000` in your browser.
 
 ### Query Flow
 
-1. **Query Analysis**: System detects if query is a name/keyword query or semantic query
-2. **Hybrid Retrieval**:
+1. **Hybrid Retrieval**:
    - BM25 finds exact keyword matches
    - Vector index finds semantically similar content
-   - Results are combined with weighted scores
-3. **Filtering**: Very small chunks (< 100 chars) are filtered out
-4. **Top-K Selection**: Top 8 most relevant chunks are selected
-5. **Context Assembly**: Selected chunks are formatted and sent to LLM
-6. **Answer Generation**: LLM generates answer based on retrieved context only
+   - Results are combined via Reciprocal Rank Fusion (RRF) — fused by rank order, not raw score magnitude (see "Hybrid Search" under Architecture above). `use_hybrid=false` skips BM25 and uses vector-only search instead.
+2. **Filtering**: Very small chunks (< 100 chars) are filtered out
+3. **Deduplication**: Near-duplicate chunks from the same source (e.g. two adjacent, overlapping adaptive-chunking windows) are collapsed to one
+4. **Reranking (optional)**: If `RERANK_PROVIDER` is set (or `use_rerank=true` for this call), the deduped candidates are reordered by the configured reranker; disabled by default
+5. **Top-K Selection**: Top 8 most relevant chunks are selected
+6. **Context Assembly**: Selected chunks are formatted and sent to LLM
+7. **Answer Generation**: LLM generates answer based on retrieved context only
 
 ### Why Hybrid Search?
 
@@ -367,7 +369,7 @@ The `build_vector_store()` function creates an **empty** vector index (pluggable
 ### Adaptive Chunking
 
 The system uses an adaptive chunking strategy:
-- Automatically detects structured vs unstructured documents
+- Automatically detects structured vs unstructured documents, based on document size plus how list/bullet-heavy and line-dense the text is (not just "contains a hyphen somewhere") — always logged, so you can see which branch a given upload took
 - Uses appropriate chunk sizes for different document types
 - Uses RecursiveCharacterTextSplitter to split large blocks while preserving context
 - Ensures meaningful chunks are created from the start (no tiny fragments)
@@ -375,7 +377,9 @@ The system uses an adaptive chunking strategy:
 ### Details
 
 The implementation follows hybrid search approach:
-- **Hybrid Search**: BM25 + Vector similarity, a common pattern in production RAG systems
+- **Hybrid Search**: BM25 + Vector similarity, combined via RRF, a common pattern in production RAG systems
+- **Deduplication**: near-duplicate chunks from the same source (overlapping adaptive-chunking windows) are collapsed before reranking/generation
+- **Reranking**: optional, pluggable (`RERANK_PROVIDER`), off by default
 - **RecursiveCharacterTextSplitter**: Most reliable for structured documents
 - **Chunk sizes**: 200-400 chars for structured docs, 500-800 for long-form
 - **Overlap**: 10-20% for context preservation

@@ -136,6 +136,8 @@ User → API (routes.py)
      → Search (hybrid_search.py)
          ├→ Indexes (vector_provider.py) - semantic search
          └→ Indexes (bm25_provider.py) - keyword search
+     → Service (retrieval_service.py) - filters short chunks, dedupes near-duplicate
+       overlapping chunks (adjacent adaptive-chunking windows)
      → Search (rerank_provider.py) - optional reranking of candidates (RERANK_PROVIDER, default "none")
      → Service (rag_service.py) - combines results
      → LLM (llm_provider.py) - generates answer
