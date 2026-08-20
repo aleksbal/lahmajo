@@ -1,6 +1,7 @@
 # lahmajo/services/retrieval_service.py
 """Retrieval service - handles document retrieval using hybrid search."""
 import logging
+from difflib import SequenceMatcher
 from typing import List, Optional, Tuple
 from langchain_core.documents import Document
 
@@ -10,6 +11,37 @@ from lahmajo.search.rerank_provider import get_rerank_provider, LLMRerankProvide
 
 logger = logging.getLogger(__name__)
 
+# Similarity ratio (0-1) above which two chunks from the same source are treated
+# as near-duplicates. Adaptive chunking overlaps adjacent chunks by 50-100 chars
+# (see ingestion/processing.py), so hybrid/vector search can surface two chunks
+# that are mostly the same text - this threshold is deliberately high so it only
+# catches that kind of overlap, not merely related content.
+DEDUPE_SIMILARITY_THRESHOLD = 0.8
+
+
+def _is_near_duplicate(a: str, b: str, threshold: float = DEDUPE_SIMILARITY_THRESHOLD) -> bool:
+    """Cheap near-duplicate check between two chunks' text."""
+    return SequenceMatcher(None, a, b).quick_ratio() >= threshold
+
+
+def _dedupe_chunks(docs: List[Document], threshold: float = DEDUPE_SIMILARITY_THRESHOLD) -> List[Document]:
+    """Drop chunks that are near-duplicates of an already-kept chunk from the same
+    source, so overlapping adaptive-chunking windows don't waste context budget
+    (or reranker candidate slots) on redundant text. Keeps the first occurrence,
+    i.e. respects the incoming rank/relevance order.
+    """
+    kept: List[Document] = []
+    for doc in docs:
+        source = doc.metadata.get("source", "unknown")
+        is_duplicate = any(
+            kept_doc.metadata.get("source", "unknown") == source
+            and _is_near_duplicate(doc.page_content, kept_doc.page_content, threshold)
+            for kept_doc in kept
+        )
+        if not is_duplicate:
+            kept.append(doc)
+    return kept
+
 
 def retrieve_context(
     query: str,
@@ -18,7 +50,8 @@ def retrieve_context(
     use_rerank: Optional[bool] = None,
 ) -> Tuple[str, List[Document]]:
     """
-    Retrieve relevant documents for a query using hybrid search, optionally reranked.
+    Retrieve relevant documents for a query using hybrid search, deduplicated and
+    optionally reranked.
 
     Args:
         query: Search query
@@ -84,6 +117,14 @@ def retrieve_context(
     # Filter out very small chunks
     MIN_CHARS = 100
     filtered_docs = [doc for doc in top_docs if len(doc.page_content.strip()) >= MIN_CHARS]
+
+    # Collapse near-duplicate chunks before reranking/truncation, so overlapping
+    # adaptive-chunking windows don't eat into the reranker's candidate pool or
+    # the final top-k.
+    deduped_count = len(filtered_docs)
+    filtered_docs = _dedupe_chunks(filtered_docs)
+    if len(filtered_docs) < deduped_count:
+        logger.info(f"Deduped {deduped_count - len(filtered_docs)} near-duplicate chunk(s)")
 
     # Rerank the filtered candidates if a rerank provider is configured, otherwise keep
     # them in hybrid-search order.

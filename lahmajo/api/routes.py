@@ -17,6 +17,7 @@ from lahmajo.services.ingestion_service import (
 from lahmajo.indexes.state import get_vector_index, get_all_documents
 from lahmajo.search.hybrid_search import HybridRetriever
 from lahmajo.search.rerank_provider import get_rerank_provider, LLMRerankProvider
+from lahmajo.services.retrieval_service import _dedupe_chunks
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -107,6 +108,12 @@ async def debug_search(query: str, use_hybrid: bool = True, use_rerank: bool = F
                 results = vector_index.similarity_search(query, k=candidate_k)
                 filtered_results = [(doc, None) for doc in results if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"
+
+        # Collapse near-duplicate chunks (overlapping adaptive-chunking windows) before
+        # reranking/display, same as retrieve_context() does for the real answer path.
+        deduped_docs = _dedupe_chunks([doc for doc, _ in filtered_results])
+        deduped_ids = {id(doc) for doc in deduped_docs}
+        filtered_results = [(doc, score) for doc, score in filtered_results if id(doc) in deduped_ids]
 
         # Rerank if requested. Uses RERANK_PROVIDER if one is configured, otherwise
         # explicitly uses the LLM reranker for this call regardless of global config -
