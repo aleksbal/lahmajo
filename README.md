@@ -273,6 +273,14 @@ When enabled, a larger candidate pool (20 instead of 10) is fetched from hybrid 
 
 Additional rerank providers (e.g., a local cross-encoder model) can be added by implementing the `RerankProvider` interface in `lahmajo/search/rerank_provider.py`.
 
+### Static UI Directory
+
+`GET /` serves `static/index.html`, located by default relative to the installed package (`src/lahmajo/api/routes.py` → repo root → `static/`). This works for how the project is actually run - an editable install (`pip install -e .`), both locally and in `docker/Dockerfile`. It does **not** work with a normal, non-editable `pip install .`, since `static/` lives outside the installed package and isn't bundled into it. If you install that way, point `LAHMAJO_STATIC_DIR` at wherever `static/` actually lives:
+
+```bash
+export LAHMAJO_STATIC_DIR=/path/to/lahmajo/static
+```
+
 ## Usage
 
 ### Docker (Recommended)

@@ -1,6 +1,7 @@
 # lahmajo/api/routes.py
 """FastAPI routes - API endpoints only."""
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -35,13 +36,25 @@ class AskResponse(BaseModel):
     answer: str
 
 
+STATIC_DIR_ENV = "LAHMAJO_STATIC_DIR"
+
+
+def _default_static_dir() -> Path:
+    # __file__ is src/lahmajo/api/routes.py - parents[3] is the repo root
+    # (api -> lahmajo -> src -> repo root). Correct for how this project is
+    # actually installed/run (editable install - `pip install -e .` - both
+    # locally and in docker/Dockerfile), but NOT for a normal, non-editable
+    # `pip install .`: that copies the package into site-packages without
+    # static/ alongside it, since static/ lives outside src/lahmajo/ and isn't
+    # packaged. LAHMAJO_STATIC_DIR below is the escape hatch for that case.
+    return Path(__file__).resolve().parents[3] / "static"
+
+
 @app.get("/", response_class=HTMLResponse)
 async def get_ui():
     """Serve the HTML UI."""
-    # __file__ is src/lahmajo/api/routes.py - parents[3] is the repo root
-    # (api -> lahmajo -> src -> repo root). This depth is tied to the src/
-    # layout (see pyproject.toml) - if the package moves again, update this.
-    html_path = Path(__file__).resolve().parents[3] / "static" / "index.html"
+    static_dir = Path(os.environ[STATIC_DIR_ENV]) if STATIC_DIR_ENV in os.environ else _default_static_dir()
+    html_path = static_dir / "index.html"
     if html_path.exists():
         # Explicit encoding: read_text() defaults to locale.getpreferredencoding(),
         # which is cp1252 on Windows - static/index.html is UTF-8 and contains
