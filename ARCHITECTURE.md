@@ -2,7 +2,34 @@
 
 ## Overview
 
-The project follows a clean domain-driven structure:
+The project follows a clean, domain-driven, layered structure — each layer only calls the one below it:
+
+```
+lahmajo/
+├── lahmajo/               # Main package (project name)
+│   ├── api/               # API layer - HTTP endpoints
+│   │   └── routes.py
+│   ├── services/          # Service layer - business logic
+│   │   ├── rag_service.py
+│   │   ├── retrieval_service.py
+│   │   └── ingestion_service.py
+│   ├── ingestion/         # Ingestion layer - document processing
+│   │   └── processing.py
+│   ├── indexes/           # Index layer - search indexes
+│   │   ├── state.py
+│   │   ├── vector_provider.py
+│   │   ├── bm25_provider.py
+│   │   └── elasticsearch_hybrid_provider.py
+│   ├── search/            # Search layer - retrieval algorithms
+│   │   └── hybrid_search.py
+│   ├── llm/               # Provider layer - model abstraction
+│   │   ├── llm_provider.py
+│   │   └── embedding_provider.py
+│   └── cli.py             # CLI entry point
+├── tests/                 # Unit tests
+├── static/                # Static files (HTML UI)
+└── requirements.txt       # Dependencies
+```
 
 ```
 ┌─────────────────┐
@@ -17,13 +44,12 @@ The project follows a clean domain-driven structure:
 └────────┬────────┘  - retrieval_service.py
          │           - ingestion_service.py
          │
-         │
          ├──────────────────┬──────────────────┐
          ▼                  ▼                  ▼
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ Ingestion Layer │ │   Index Layer   │ │  Embedding      │
-│  (Processing)   │ │   (Indexes)     │ │  Models         │
-│  ingestion/     │ │   indexes/      │ │  llm/           │
+│ Ingestion Layer │ │   Index Layer   │ │  Provider Layer │
+│  (Processing)   │ │   (Indexes)     │ │  (llm/)         │
+│  ingestion/      │ │   indexes/      │ │  llm_provider.py│
 │  processing.py  │ │   state.py      │ │  embedding_     │
 │                 │ │   vector_       │ │  provider.py    │
 │                 │ │   provider.py   │ │                 │
@@ -35,8 +61,8 @@ The project follows a clean domain-driven structure:
                             │
                             ▼
                  ┌─────────────────┐
-                 │  Search Layer    │  Combines both indexes
-                 │  (Retrieval)     │  search/hybrid_search.py
+                 │  Search Layer   │  Combines both indexes
+                 │  (Retrieval)    │  search/hybrid_search.py
                  └─────────────────┘
 ```
 
@@ -44,69 +70,63 @@ The project follows a clean domain-driven structure:
 
 ### API Layer (`lahmajo/api/`)
 **Responsibility**: HTTP interface only
-- Route handlers
-- Request/response validation
-- Error handling
+- Route handlers, request/response validation, error handling
 - **No business logic**
 
-**Files**:
-- `routes.py` - All FastAPI endpoints
+**Files**: `routes.py` — all FastAPI endpoints
 
 ### Service Layer (`lahmajo/services/`)
 **Responsibility**: Business logic orchestration
-- Coordinates between API, Storage, and Search layers
-- Implements use cases
+- Coordinates between API, ingestion, index, and search layers
 - **No direct data access**
 
 **Files**:
-- `rag_service.py` - RAG agent creation and question answering
-- `retrieval_service.py` - Document retrieval operations
-- `ingestion_service.py` - Document ingestion workflow
+- `rag_service.py` — RAG agent creation and question answering
+- `retrieval_service.py` — document retrieval operations
+- `ingestion_service.py` — document ingestion workflow
 
 ### Ingestion Layer (`lahmajo/ingestion/`)
-**Responsibility**: Document ingestion pipeline
-- Document loading, chunking, and embedding
+**Responsibility**: Document ingestion pipeline (loading, chunking, embedding)
 - **No business logic**
 
-**Files**:
-- `processing.py` - Document loading, chunking, and embedding
+**Files**: `processing.py`
 
 ### Index Layer (`lahmajo/indexes/`)
 **Responsibility**: Search index providers and state management
-- **Vector Index**: Stores embedded documents for semantic search
-- **BM25 Index**: Keyword search index
-- **Elasticsearch Hybrid Provider**: Native ES hybrid search (combines BM25 + vector in single query)
+- **Vector Index**: stores embedded documents for semantic search
+- **BM25 Index**: keyword search index
+- **Elasticsearch Hybrid Provider**: native ES hybrid search (combines BM25 + vector in a single query)
 - **No business logic**
 
 **Files**:
-- `state.py` - Index state management (singleton, document tracking)
-- `vector_provider.py` - Vector index provider (in_memory, elasticsearch, etc.)
-- `bm25_provider.py` - BM25 index provider (rank_bm25, elasticsearch, etc.)
-- `elasticsearch_hybrid_provider.py` - ES native hybrid search provider (BM25 + vector in single query)
+- `state.py` — index state management (lazy singleton, document tracking)
+- `vector_provider.py` — vector index provider (`in_memory`, `elasticsearch`, ...)
+- `bm25_provider.py` — BM25 index provider (`rank_bm25`, `elasticsearch`, ...)
+- `elasticsearch_hybrid_provider.py` — ES native hybrid search provider
 
 ### Search Layer (`lahmajo/search/`)
-**Responsibility**: Search algorithms that use indexes
-- **Hybrid Search**: Combines vector (semantic) + BM25 (keyword) search
+**Responsibility**: Search algorithms that use the indexes
+- Combines vector (semantic) + BM25 (keyword) search
 - **No business logic**
 
-**Files**:
-- `hybrid_search.py` - Combines vector + BM25 search results
+**Files**: `hybrid_search.py`
 
 ### Provider Layer (`lahmajo/llm/`)
 **Responsibility**: Model provider abstraction
-- **Embedding Models**: Convert text to vectors (used by vector index)
-- **LLM Models**: Generate text responses
+- **Embedding Models**: convert text to vectors (used by the vector index)
+- **LLM Models**: generate text responses
 - **No business logic**
+- Configuration is entirely via environment variables (see README.md)
 
 **Files**:
-- `embedding_provider.py` - Embedding model factory (for vector index)
-- `llm_provider.py` - LLM model factory (for RAG responses)
+- `embedding_provider.py` — embedding model factory
+- `llm_provider.py` — LLM model factory
 
 ## Data Flow
 
 ### Question Answering
 ```
-User → API (routes.py) 
+User → API (routes.py)
      → Service (rag_service.py)
      → Service (retrieval_service.py)
      → Search (hybrid_search.py)
@@ -133,55 +153,53 @@ User → API (routes.py)
 
 ## Terminology
 
-To avoid confusion, here are the key terms and their distinctions:
-
 ### Embedding Models vs Vector Index
 
-- **Embedding Models** (`llm/embedding_provider.py`):
-  - **What**: AI models that convert text into numerical vectors
-  - **Purpose**: Transform text → vectors (e.g., "cat" → [0.1, 0.5, -0.3, ...])
-  - **Used by**: Vector index during ingestion and search
+- **Embedding Models** (`llm/embedding_provider.py`): AI models that convert text into numerical vectors. Transform text → vectors (e.g., "cat" → `[0.1, 0.5, -0.3, ...]`). Used by the vector index during ingestion and search.
+- **Vector Index** (`indexes/vector_provider.py`): storage system that holds embedded documents and performs semantic similarity search, using an embedding model to convert queries and documents.
 
-- **Vector Index** (`indexes/vector_provider.py`):
-  - **What**: Storage system that holds embedded documents
-  - **Purpose**: Store vectors and perform semantic similarity search
-  - **Uses**: Embedding models to convert queries and documents
-
-**Analogy**: Embedding model = translator (text→numbers), Vector index = library (stores translated books)
+**Analogy**: Embedding model = translator (text→numbers), Vector index = library (stores translated books).
 
 ### Vector Index vs BM25 Index
 
-- **Vector Index** (Semantic Search):
-  - **Type**: Semantic similarity search
-  - **Best for**: Finding documents by meaning, context, concepts
-  - **Example**: Query "feline" finds documents about "cats"
-  - **Location**: `indexes/vector_provider.py`
-
-- **BM25 Index** (Keyword Search):
-  - **Type**: Keyword matching search
-  - **Best for**: Exact matches, names, technical terms, identifiers
-  - **Example**: Query "John Smith" finds documents containing "John Smith"
-  - **Location**: `indexes/bm25_provider.py`
+- **Vector Index** (Semantic Search): finds documents by meaning/context/concepts. Example: query "feline" finds documents about "cats". Location: `indexes/vector_provider.py`.
+- **BM25 Index** (Keyword Search): exact matches, names, technical terms, identifiers. Example: query "John Smith" finds documents containing "John Smith". Location: `indexes/bm25_provider.py`.
 
 **Both are used together** in hybrid search for optimal retrieval.
 
 ### Elasticsearch Native Hybrid Search
 
-When both vector and BM25 providers are Elasticsearch-based, the system uses **Elasticsearch native hybrid search**:
-
+When both the vector and BM25 providers are Elasticsearch-based, the system uses **Elasticsearch native hybrid search**:
 - **Single Query**: ES combines BM25 (`match` query) and vector (`knn` query) in one request
-- **Native Scoring**: ES's optimized score combination (more sophisticated than Python-side weighted average)
-- **Better Performance**: Single network round trip, ES query optimization
+- **Native Scoring**: ES's optimized score combination (more sophisticated than the Python-side weighted average)
+- **Better Performance**: single network round trip, ES query optimization
 - **Scalability**: ES handles large datasets efficiently without keeping documents in memory
 
-**Implementation**: `ElasticsearchHybridProvider` uses ES `bool` query with `should` clauses combining `match` (BM25) and `knn` (vector) queries, with configurable boost weights.
+**Implementation**: `ElasticsearchHybridProvider` uses an ES `bool` query with `should` clauses combining `match` (BM25) and `knn` (vector) queries, with configurable boost weights.
 
-**Auto-detection**: The system automatically detects when both providers are ES-based and uses native hybrid search. Falls back to Python-side combination for mixed providers (e.g., ES vector + rank-bm25).
+**Auto-detection**: the system automatically detects when both providers are ES-based and uses native hybrid search. It falls back to Python-side combination for mixed providers (e.g., ES vector + `rank-bm25`).
 
-## Benefits
+## Import Examples
 
-1. **Separation of Concerns**: Each layer has a single responsibility
-2. **Testability**: Layers can be tested independently
-3. **Maintainability**: Easy to locate and modify code
-4. **Scalability**: Easy to add new features without mixing concerns
-5. **Reusability**: Services can be used by CLI, API, or future interfaces
+```python
+# From API layer
+from lahmajo.services.rag_service import ask_question
+
+# From Service layer
+from lahmajo.indexes.state import get_vector_index
+from lahmajo.search.hybrid_search import HybridRetriever
+
+# From Ingestion layer
+from lahmajo.ingestion.processing import ingest_documents
+
+# From Index layer
+from lahmajo.indexes import get_vector_index_provider, get_bm25_provider
+```
+
+## Benefits of This Structure
+
+1. **Separation of concerns**: each layer has a single responsibility
+2. **Testability**: layers can be tested independently
+3. **Maintainability**: easy to locate and modify code
+4. **Scalability**: easy to add new features without mixing concerns
+5. **Reusability**: services can be used by the CLI, API, or future interfaces

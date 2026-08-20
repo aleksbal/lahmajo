@@ -35,8 +35,9 @@ class TestRetrievalService(unittest.TestCase):
         mock_index = MagicMock()
         mock_get_index.return_value = mock_index
         
-        doc1 = Document(page_content="Test content 1", metadata={"source": "test1"})
-        doc2 = Document(page_content="Test content 2", metadata={"source": "test2"})
+        # Content must be >= 100 chars: retrieve_context() filters out shorter chunks.
+        doc1 = Document(page_content="Test content 1. " * 8, metadata={"source": "test1"})
+        doc2 = Document(page_content="Test content 2. " * 8, metadata={"source": "test2"})
         add_documents([doc1, doc2])
         
         mock_retriever = MagicMock()
