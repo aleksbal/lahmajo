@@ -298,6 +298,25 @@
                     <label for="question">Your Question:</label>
                     <input type="text" id="question" placeholder="Enter your question here...">
                 </div>
+                <div class="form-group">
+                    <label>Retrieval Options:</label>
+                    <div style="display: flex; gap: 20px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="useHybrid" checked style="margin-right: 8px;">
+                            <span>
+                                <strong>Hybrid search</strong>
+                                <br><small style="color: #666;">BM25 + vector (unchecked = vector-only)</small>
+                            </span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="useRerank" style="margin-right: 8px;">
+                            <span>
+                                <strong>Rerank results</strong>
+                                <br><small style="color: #666;">LLM re-scores retrieved chunks before answering</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
                 <button id="askBtn" onclick="askQuestion()">Ask Question</button>
                 <div id="askStatus" class="status"></div>
                 <div class="form-group" style="margin-top: 20px;">
@@ -429,19 +448,22 @@
                 showStatus('askStatus', 'Please enter a question', 'error');
                 return;
             }
-            
+
+            const useHybrid = document.getElementById('useHybrid').checked;
+            const useRerank = document.getElementById('useRerank').checked;
+
             askBtn.disabled = true;
             askBtn.innerHTML = '<span class="loading"></span>Processing...';
             answerArea.textContent = '';
             status.className = 'status';
-            
+
             try {
                 const response = await fetch('/ask', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ question: question })
+                    body: JSON.stringify({ question: question, use_hybrid: useHybrid, use_rerank: useRerank })
                 });
                 
                 if (!response.ok) {

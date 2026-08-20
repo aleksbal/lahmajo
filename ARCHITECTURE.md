@@ -23,7 +23,8 @@ lahmajo/                   # repo root
 │       │   ├── bm25_provider.py
 │       │   └── elasticsearch_hybrid_provider.py
 │       ├── search/            # Search layer - retrieval algorithms
-│       │   └── hybrid_search.py
+│       │   ├── hybrid_search.py
+│       │   └── rerank_provider.py
 │       ├── llm/               # Provider layer - model abstraction
 │       │   ├── llm_provider.py
 │       │   └── embedding_provider.py
@@ -111,9 +112,12 @@ lahmajo/                   # repo root
 ### Search Layer (`src/lahmajo/search/`)
 **Responsibility**: Search algorithms that use the indexes
 - Combines vector (semantic) + BM25 (keyword) search
+- Optional reranking pass over retrieved candidates
 - **No business logic**
 
-**Files**: `hybrid_search.py`
+**Files**:
+- `hybrid_search.py` — combines BM25 + vector search (RRF for the Python-side path; ES native hybrid when both providers are Elasticsearch-based)
+- `rerank_provider.py` — pluggable reranking of hybrid search's candidates (`none` default, `llm` reuses the configured LLM provider)
 
 ### Provider Layer (`src/lahmajo/llm/`)
 **Responsibility**: Model provider abstraction
@@ -136,6 +140,9 @@ User → API (routes.py)
      → Search (hybrid_search.py)
          ├→ Indexes (vector_provider.py) - semantic search
          └→ Indexes (bm25_provider.py) - keyword search
+     → Service (retrieval_service.py) - filters short chunks, dedupes near-duplicate
+       overlapping chunks (adjacent adaptive-chunking windows)
+     → Search (rerank_provider.py) - optional reranking of candidates (RERANK_PROVIDER, default "none")
      → Service (rag_service.py) - combines results
      → LLM (llm_provider.py) - generates answer
      → API (routes.py)
