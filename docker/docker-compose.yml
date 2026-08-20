@@ -27,7 +27,9 @@ services:
       - lahmajo-network
 
   lahmajo:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: lahmajo-app
     environment:
       # Elasticsearch Configuration
@@ -49,8 +51,8 @@ services:
       elasticsearch:
         condition: service_healthy
     volumes:
-      - ./static:/app/static
-      - ./uploads:/app/uploads
+      - ../static:/app/static
+      - ../uploads:/app/uploads
     networks:
       - lahmajo-network
     restart: unless-stopped

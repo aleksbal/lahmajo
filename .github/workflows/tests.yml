@@ -21,5 +21,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install package (editable, src/ layout)
+        run: pip install --no-deps -e .
+
       - name: Run tests
         run: python run_tests.py

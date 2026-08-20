@@ -14,8 +14,11 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (src/ layout - see pyproject.toml) and register the
+# local package. --no-deps: dependencies are already installed above from the
+# pinned requirements.txt; this step only makes `lahmajo` importable.
 COPY . .
+RUN pip install --no-cache-dir --no-deps -e .
 
 # Create necessary directories
 RUN mkdir -p /app/uploads

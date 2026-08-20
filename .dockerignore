@@ -1,6 +1,6 @@
 # Docker
-Dockerfile
-docker-compose.yml
+docker/Dockerfile
+docker/docker-compose.yml
 .env.docker
 
 # Docker volumes

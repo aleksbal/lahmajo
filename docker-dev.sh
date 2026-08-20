@@ -42,7 +42,7 @@ check_docker_compose() {
 # Start services
 start_services() {
     print_status "Starting Lahmajo services..."
-    docker-compose up -d
+    docker-compose -f docker/docker-compose.yml up -d
     print_status "Services started successfully!"
     print_status "Web UI: http://localhost:8000"
     print_status "Elasticsearch: http://localhost:9200"
@@ -51,23 +51,23 @@ start_services() {
 # Stop services
 stop_services() {
     print_status "Stopping Lahmajo services..."
-    docker-compose down
+    docker-compose -f docker/docker-compose.yml down
     print_status "Services stopped successfully!"
 }
 
 # View logs
 view_logs() {
     if [ -n "$1" ]; then
-        docker-compose logs -f "$1"
+        docker-compose -f docker/docker-compose.yml logs -f "$1"
     else
-        docker-compose logs -f
+        docker-compose -f docker/docker-compose.yml logs -f
     fi
 }
 
 # Rebuild services
 rebuild_services() {
     print_status "Rebuilding Lahmajo services..."
-    docker-compose build --no-cache
+    docker-compose -f docker/docker-compose.yml build --no-cache
     print_status "Rebuild completed!"
 }
 
@@ -78,7 +78,7 @@ reset_all() {
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         print_status "Removing all containers and volumes..."
-        docker-compose down -v
+        docker-compose -f docker/docker-compose.yml down -v
         docker system prune -f
         print_status "Reset completed!"
     else

@@ -87,6 +87,10 @@ source .venv/bin/activate  # or .\.venv\Scripts\Activate.ps1 on Windows
 # Install dependencies
 pip install -r requirements.txt
 
+# Register the local package (src/ layout - see pyproject.toml). Needed so
+# `import lahmajo...` resolves regardless of your working directory.
+pip install --no-deps -e .
+
 # Ensure Ollama is running
 ollama serve
 ```
