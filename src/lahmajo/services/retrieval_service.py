@@ -115,14 +115,14 @@ def retrieve_context(
             try:
                 retrieved_with_scores = vector_index.similarity_search_with_score(query, k=candidate_k)
                 top_docs = [doc for doc, score in retrieved_with_scores]
-            except:
+            except Exception:
                 top_docs = vector_index.similarity_search(query, k=candidate_k)
     else:
         # Fallback to vector-only search
         try:
             retrieved_with_scores = vector_index.similarity_search_with_score(query, k=candidate_k)
             top_docs = [doc for doc, score in retrieved_with_scores]
-        except:
+        except Exception:
             top_docs = vector_index.similarity_search(query, k=candidate_k)
 
     # Filter out very small chunks

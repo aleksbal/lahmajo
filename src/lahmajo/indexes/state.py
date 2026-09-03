@@ -126,15 +126,6 @@ def get_vector_store() -> VectorIndexProvider:
     return get_vector_index()
 
 
-def get_vector_store() -> VectorIndexProvider:
-    """
-    Get vector index (backward compatibility alias).
-    
-    Note: Use get_vector_index() for new code.
-    """
-    return get_vector_index()
-
-
 def reset_vector_index():
     """Reset the vector index (useful for testing)."""
     global _vector_index, _all_documents
