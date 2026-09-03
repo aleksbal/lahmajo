@@ -269,9 +269,24 @@ export RERANK_PROVIDER=llm
 # No additional configuration needed - reuses the already-configured LLM_PROVIDER
 ```
 
-When enabled, a larger candidate pool (20 instead of 10) is fetched from hybrid search so the reranker has more to work with, then the configured LLM is asked to reorder them by relevance to the query before the final top-k is selected. If the LLM's response can't be parsed into a valid ranking, or the call fails, retrieval falls back to hybrid search's own order rather than failing the request.
+**Local cross-encoder:**
+```bash
+pip install sentence-transformers        # optional extra, not in requirements.txt
+export RERANK_PROVIDER=cross_encoder
+export RERANK_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"  # optional, this is the default
+```
 
-Additional rerank providers (e.g., a local cross-encoder model) can be added by implementing the `RerankProvider` interface in `lahmajo/search/rerank_provider.py`.
+When enabled, a larger candidate pool (20 instead of 10) is fetched from hybrid search so the reranker has more to work with, then the configured provider reorders them by relevance to the query before the final top-k is selected. If the reranker fails, retrieval falls back to hybrid search's own order rather than failing the request.
+
+| Provider | Cost per query | Scores | Dependencies |
+|---|---|---|---|
+| `none` | none | n/a - hybrid order kept as-is | none |
+| `llm` | one full generation round-trip | synthetic, derived from rank position | none - reuses `LLM_PROVIDER` |
+| `cross_encoder` | one batched forward pass | the model's own relevance scores | `sentence-transformers` (pulls in torch) |
+
+The cross-encoder is purpose-built for (query, passage) scoring, so it is generally faster and more precise for this step than asking a generative model to improvise a ranking. The trade-off is the extra dependency: `sentence-transformers` pulls in torch, so it is an optional extra (`pip install sentence-transformers`, or `pip install -e ".[cross-encoder]"`) rather than a base requirement, and is not installed in CI or the Docker image. The model is downloaded and loaded on the first query that actually has candidates to rerank, then reused for the rest of the process; if it cannot be loaded (dependency missing, no network for the weights) that query falls back to hybrid order with a warning in the log rather than failing. `RERANK_MODEL` selects a different cross-encoder (e.g. `BAAI/bge-reranker-base`).
+
+Additional rerank providers can be added by implementing the `RerankProvider` interface in `lahmajo/search/rerank_provider.py`.
 
 ### Static UI Directory
 
