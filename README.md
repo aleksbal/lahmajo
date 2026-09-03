@@ -269,9 +269,24 @@ export RERANK_PROVIDER=llm
 # No additional configuration needed - reuses the already-configured LLM_PROVIDER
 ```
 
-When enabled, a larger candidate pool (20 instead of 10) is fetched from hybrid search so the reranker has more to work with, then the configured LLM is asked to reorder them by relevance to the query before the final top-k is selected. If the LLM's response can't be parsed into a valid ranking, or the call fails, retrieval falls back to hybrid search's own order rather than failing the request.
+**Local cross-encoder:**
+```bash
+pip install sentence-transformers        # optional extra, not in requirements.txt
+export RERANK_PROVIDER=cross_encoder
+export RERANK_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"  # optional, this is the default
+```
 
-Additional rerank providers (e.g., a local cross-encoder model) can be added by implementing the `RerankProvider` interface in `lahmajo/search/rerank_provider.py`.
+When enabled, a larger candidate pool (20 instead of 10) is fetched from hybrid search so the reranker has more to work with, then the configured provider reorders them by relevance to the query before the final top-k is selected. If the reranker fails, retrieval falls back to hybrid search's own order rather than failing the request.
+
+| Provider | Cost per query | Scores | Dependencies |
+|---|---|---|---|
+| `none` | none | n/a - hybrid order kept as-is | none |
+| `llm` | one full generation round-trip | synthetic, derived from rank position | none - reuses `LLM_PROVIDER` |
+| `cross_encoder` | one batched forward pass | the model's own relevance scores | `sentence-transformers` (pulls in torch) |
+
+The cross-encoder is purpose-built for (query, passage) scoring, so it is generally faster and more precise for this step than asking a generative model to improvise a ranking. The trade-off is the extra dependency: `sentence-transformers` pulls in torch, so it is an optional extra (`pip install sentence-transformers`, or `pip install -e ".[cross-encoder]"`) rather than a base requirement, and is not installed in CI or the Docker image. The model is downloaded and loaded on the first query that actually has candidates to rerank, then reused for the rest of the process; if it cannot be loaded (dependency missing, no network for the weights) that query falls back to hybrid order with a warning in the log rather than failing. `RERANK_MODEL` selects a different cross-encoder (e.g. `BAAI/bge-reranker-base`).
+
+Additional rerank providers can be added by implementing the `RerankProvider` interface in `lahmajo/search/rerank_provider.py`.
 
 ### Static UI Directory
 
@@ -321,10 +336,69 @@ Then open `http://localhost:8000` in your browser.
 - **Ask Questions**: Query the knowledge base and get answers based on retrieved context
 - **Retrieval Options**: Toggle hybrid search and reranking per-question (checkboxes next to the question input) without restarting the server or changing env vars
 
+### CLI
+
+```bash
+python cli.py                      # interactive prompt
+python cli.py "your question"      # one-shot question
+python cli.py ask "your question"  # same, explicit subcommand
+python cli.py search "your query"  # retrieval only, no answer generation
+```
+
+`search` is the CLI counterpart of `GET /debug/search`: it runs retrieval and prints
+the chunks that would be handed to the LLM, without generating an answer. Useful for
+comparing retrieval configurations without starting a server.
+
+```bash
+python cli.py search "your query" --k 5 --no-hybrid   # vector-only, 5 chunks
+python cli.py search "your query" --rerank            # force reranking on
+python cli.py search "your query" --json              # machine-readable output
+```
+
+Both `ask` and `search` accept the same retrieval toggles the API exposes:
+
+| Flag | Effect |
+|---|---|
+| `--no-hybrid` | Vector-only search instead of hybrid BM25 + vector |
+| `--rerank` | Force reranking on, even if `RERANK_PROVIDER=none` |
+| `--no-rerank` | Force reranking off, even if `RERANK_PROVIDER` is set |
+| `--k N` | Maximum chunks to return (`search` only, default 8, must be ≥ 1). Fewer come back if the corpus has less to offer |
+| `--json` | Machine-readable output (`search` only) |
+
+Omitting both `--rerank` and `--no-rerank` defers to the `RERANK_PROVIDER` env var,
+matching the `null` default of `use_rerank` on `POST /ask`.
+
+**Note:** with the default in-process index (`VECTOR_INDEX_PROVIDER=in_memory`) the
+knowledge base only holds what was ingested in that same process, so a CLI `search`
+finds nothing unless an external backend such as Elasticsearch is configured.
+
 ### API Endpoints
 
 - `GET /` - Web UI
 - `POST /ask` - Ask a question (JSON: `{"question": "your question", "use_hybrid": true, "use_rerank": null}`). `use_hybrid` defaults to `true`; `use_rerank` defaults to `null`, which defers to the `RERANK_PROVIDER` env var — pass `true`/`false` to force it on/off for this call.
+
+  The response is `{"answer": "...", "sources": [...]}`. Each entry in `sources` is one
+  retrieved excerpt the answer could cite:
+
+  ```json
+  {
+    "answer": "The deadline is 30 June [source 2].",
+    "sources": [
+      {"index": 1, "source": "notes.md", "score": 0.0312, "length": 412, "preview": "..."},
+      {"index": 2, "source": "contract.pdf", "score": 0.0298, "length": 380, "preview": "..."}
+    ]
+  }
+  ```
+
+  `index` matches the `[source N]` marker the model cites inline, so a citation resolves
+  to the file and text it came from. Indices are unique within a response even if the
+  agent retrieved more than once — numbering continues across retrieval calls rather
+  than restarting at 1. `sources` is empty when the agent answered without
+  retrieving, or when retrieval found nothing. `score` is provider-specific and only
+  comparable within one retrieval call, not across the whole answer — if the agent
+  retrieved twice, each call scored a different query and possibly took a different
+  ranking path, so those numbers are not on a shared scale. It is `null` when the
+  ranking path could not supply one.
 - `POST /ingest` - Ingest documents (Form data: `url`, `files`, `chunking_strategy`)
 - `GET /debug/search?query=...&use_hybrid=true&use_rerank=false` - Debug endpoint to test retrieval directly. `use_rerank=true` previews reranked results for this one call (uses `RERANK_PROVIDER` if configured, otherwise falls back to the LLM reranker) regardless of the global `RERANK_PROVIDER` setting.
 

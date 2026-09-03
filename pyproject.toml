@@ -11,6 +11,12 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dynamic = ["dependencies"]
 
+[project.optional-dependencies]
+# sentence-transformers pulls in torch, which is large - kept out of the base install
+# (requirements.txt) so CI and the Docker image stay small. Only needed for
+# RERANK_PROVIDER=cross_encoder.
+cross-encoder = ["sentence-transformers>=3.0"]
+
 [project.scripts]
 lahmajo = "lahmajo.cli:main"
 

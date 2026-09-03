@@ -163,7 +163,55 @@
             content: "Answer will appear here...";
             color: #999;
         }
-        
+
+        .sources-list {
+            margin-top: 12px;
+        }
+
+        .sources-list:empty {
+            display: none;
+        }
+
+        .sources-list h3 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .source-item {
+            border-left: 3px solid #e0e0e0;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            background: #fafafa;
+            font-size: 0.9em;
+        }
+
+        .source-item-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .source-marker {
+            font-weight: 600;
+            color: #444;
+        }
+
+        .source-meta {
+            color: #888;
+            font-size: 0.85em;
+            white-space: nowrap;
+        }
+
+        .source-preview {
+            color: #555;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
         .status {
             padding: 10px;
             border-radius: 6px;
@@ -322,6 +370,7 @@
                 <div class="form-group" style="margin-top: 20px;">
                     <label for="answer">Answer:</label>
                     <div id="answer" class="answer-area"></div>
+                    <div id="sourcesList" class="sources-list"></div>
                 </div>
             </div>
             
@@ -438,6 +487,39 @@
         });
         
         // Ask question
+        // Render the excerpts behind an answer. The numbering matches the
+        // [source N] markers the model cites inline, so a reader can follow a
+        // citation to the file and text it came from.
+        function renderSources(sources) {
+            const container = document.getElementById('sourcesList');
+
+            if (!sources || sources.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const items = sources.map(source => {
+                // Score is provider-specific and only comparable within one
+                // retrieval call - an answer built from two calls carries two
+                // unrelated scales - so it is shown as a raw number, never as a
+                // percentage or a bar that would invite comparing across items.
+                const score = (source.score === null || source.score === undefined)
+                    ? ''
+                    : ' &middot; score ' + Number(source.score).toFixed(4);
+                return `
+                    <div class="source-item">
+                        <div class="source-item-header">
+                            <span class="source-marker">[source ${source.index}] ${escapeHtml(source.source)}</span>
+                            <span class="source-meta">${source.length} chars${score}</span>
+                        </div>
+                        <div class="source-preview">${escapeHtml(source.preview)}</div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = '<h3>Sources</h3>' + items;
+        }
+
         async function askQuestion() {
             const question = document.getElementById('question').value.trim();
             const answerArea = document.getElementById('answer');
@@ -455,6 +537,7 @@
             askBtn.disabled = true;
             askBtn.innerHTML = '<span class="loading"></span>Processing...';
             answerArea.textContent = '';
+            renderSources([]);
             status.className = 'status';
 
             try {
@@ -473,10 +556,12 @@
                 
                 const data = await response.json();
                 answerArea.textContent = data.answer;
+                renderSources(data.sources || []);
                 showStatus('askStatus', 'Question answered successfully!', 'success');
             } catch (error) {
                 showStatus('askStatus', 'Error: ' + error.message, 'error');
                 answerArea.textContent = 'Error: ' + error.message;
+                renderSources([]);
             } finally {
                 askBtn.disabled = false;
                 askBtn.innerHTML = 'Ask Question';
