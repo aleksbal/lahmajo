@@ -3,13 +3,13 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from lahmajo.services.rag_service import ask_question
+from lahmajo.services.rag_service import ask_question_with_sources
 from lahmajo.services.ingestion_service import (
     ingest_documents_from_files,
     save_uploaded_files,
@@ -32,8 +32,25 @@ class AskRequest(BaseModel):
     use_rerank: Optional[bool] = None  # None = use RERANK_PROVIDER env var default
 
 
+class SourceRefResponse(BaseModel):
+    """One citable excerpt behind an answer.
+
+    `index` matches the `[source N]` marker the answer can cite inline. `score` is
+    provider-specific and only comparable within a single response; it is null when
+    the ranking path could not supply one.
+    """
+
+    index: int
+    source: str
+    score: Optional[float] = None
+    length: int
+    preview: str
+
+
 class AskResponse(BaseModel):
     answer: str
+    # Empty when the agent answered without retrieving, or retrieval found nothing.
+    sources: List[SourceRefResponse] = []
 
 
 STATIC_DIR_ENV = "LAHMAJO_STATIC_DIR"
@@ -77,14 +94,17 @@ async def ask_endpoint(request: AskRequest):
     """Ask a question using the RAG pipeline."""
     try:
         logging.info(f"Question received: {request.question} (use_hybrid={request.use_hybrid}, use_rerank={request.use_rerank})")
-        answer = ask_question(
+        answer, sources = ask_question_with_sources(
             request.question,
             show_progress=False,
             use_hybrid=request.use_hybrid,
             use_rerank=request.use_rerank,
         )
-        logging.info(f"Answer length: {len(answer)} characters")
-        return AskResponse(answer=answer)
+        logging.info(f"Answer length: {len(answer)} characters, {len(sources)} source(s)")
+        return AskResponse(
+            answer=answer,
+            sources=[SourceRefResponse(**ref.to_dict()) for ref in sources],
+        )
     except Exception as e:
         logging.error(f"Error processing question: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
