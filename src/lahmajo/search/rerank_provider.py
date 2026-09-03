@@ -178,12 +178,18 @@ class CrossEncoderRerankProvider(RerankProvider):
     def __init__(self, model_name: Optional[str] = None):
         """Initialize the cross-encoder rerank provider.
 
+        Does not load the model: get_rerank_provider() is called at the top of every
+        retrieval, before it is known whether there is anything to rerank, so loading
+        here would download and hold model weights even for a query that returns no
+        candidates - and would raise past rerank()'s fallback in an offline
+        deployment or one without the optional dependency. Loading happens on the
+        first rerank() that actually has candidates (and is cached per model name).
+
         Args:
             model_name: Cross-encoder model to use. Defaults to the RERANK_MODEL env
                 var, then to DEFAULT_CROSS_ENCODER_MODEL.
         """
         self.model_name = model_name or os.getenv(RERANK_MODEL_ENV, DEFAULT_CROSS_ENCODER_MODEL)
-        self.model = _load_cross_encoder(self.model_name)
 
     def rerank(self, query: str, candidates: List[Document], top_k: int) -> List[Tuple[Document, float]]:
         """Rerank candidates by cross-encoder relevance score, best first."""
@@ -193,11 +199,14 @@ class CrossEncoderRerankProvider(RerankProvider):
         pairs = [(query, doc.page_content) for doc in candidates]
 
         try:
+            model = _load_cross_encoder(self.model_name)
             # One batched forward pass over every pair, not one call per candidate.
-            scores = self.model.predict(pairs)
+            scores = model.predict(pairs)
         except Exception as e:
             # Same failure posture as LLMRerankProvider: never raise out of rerank(),
-            # fall back to the incoming order. The fallback scores are positional, not
+            # fall back to the incoming order. Covers a failed model load too (missing
+            # sentence-transformers, no network for the weights), which would otherwise
+            # turn every answer into a 500. The fallback scores are positional, not
             # measured - they exist only to satisfy the (Document, float) contract.
             logger.warning(f"Cross-encoder rerank failed, falling back to original order: {e}")
             return [

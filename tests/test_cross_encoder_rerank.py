@@ -110,14 +110,60 @@ class TestCrossEncoderRerank(CrossEncoderTestCase):
         self.assertEqual([d.page_content for d, _ in ranked], ["a", "b", "c"])
 
 
+class TestLazyModelLoading(CrossEncoderTestCase):
+    """Weights load on the first rerank that has candidates, not at construction.
+
+    get_rerank_provider() runs at the top of every retrieval, before it is known
+    whether anything was found - so constructing the provider must not download or
+    hold a model, and must not turn a no-results query into an error when the
+    optional dependency or the network is missing.
+    """
+
+    def test_construction_does_not_load_the_model(self):
+        module, _model = _fake_sentence_transformers(predict_return=[])
+
+        with patch.dict(sys.modules, {"sentence_transformers": module}):
+            CrossEncoderRerankProvider(model_name="m")
+
+        module.CrossEncoder.assert_not_called()
+
+    def test_reranking_nothing_does_not_load_the_model(self):
+        module, _model = _fake_sentence_transformers(predict_return=[])
+
+        with patch.dict(sys.modules, {"sentence_transformers": module}):
+            ranked = CrossEncoderRerankProvider(model_name="m").rerank("q", [], top_k=5)
+
+        self.assertEqual(ranked, [])
+        module.CrossEncoder.assert_not_called()
+
+    def test_model_loads_on_the_first_rerank_with_candidates(self):
+        module, _model = _fake_sentence_transformers(predict_return=[0.5])
+
+        with patch.dict(sys.modules, {"sentence_transformers": module}):
+            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=1)
+
+        module.CrossEncoder.assert_called_once_with("m")
+
+    def test_missing_dependency_falls_back_instead_of_raising(self):
+        # An unusable model must degrade to the incoming order, like every other
+        # rerank failure - not propagate out of retrieve_context() as a 500.
+        docs = [_doc("a"), _doc("b")]
+
+        with patch.dict(sys.modules, {"sentence_transformers": None}):
+            ranked = CrossEncoderRerankProvider().rerank("q", docs, top_k=2)
+
+        self.assertEqual([d.page_content for d, _ in ranked], ["a", "b"])
+
+
 class TestModelSelection(CrossEncoderTestCase):
     def test_defaults_to_the_documented_model(self):
-        module, _model = _fake_sentence_transformers(predict_return=[])
+        module, _model = _fake_sentence_transformers(predict_return=[0.5])
 
         with patch.dict(sys.modules, {"sentence_transformers": module}):
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("RERANK_MODEL", None)
                 provider = CrossEncoderRerankProvider()
+                provider.rerank("q", [_doc("a")], top_k=1)
 
         self.assertEqual(provider.model_name, DEFAULT_CROSS_ENCODER_MODEL)
         module.CrossEncoder.assert_called_once_with(DEFAULT_CROSS_ENCODER_MODEL)
@@ -132,21 +178,22 @@ class TestModelSelection(CrossEncoderTestCase):
         self.assertEqual(provider.model_name, "BAAI/bge-reranker-base")
 
     def test_model_is_loaded_once_and_reused_across_instances(self):
-        module, _model = _fake_sentence_transformers(predict_return=[])
+        module, _model = _fake_sentence_transformers(predict_return=[0.5])
 
         with patch.dict(sys.modules, {"sentence_transformers": module}):
-            CrossEncoderRerankProvider(model_name="m")
-            CrossEncoderRerankProvider(model_name="m")
+            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=1)
+            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=1)
 
         # get_rerank_provider() runs per retrieval; reloading weights per query
         # would make this provider unusable.
         module.CrossEncoder.assert_called_once_with("m")
 
     def test_missing_dependency_gives_an_actionable_error(self):
-        # Simulate sentence-transformers not being installed.
+        # Simulate sentence-transformers not being installed. The message is what
+        # reaches the log when reranking falls back, so it has to say what to do.
         with patch.dict(sys.modules, {"sentence_transformers": None}):
             with self.assertRaises(ImportError) as ctx:
-                CrossEncoderRerankProvider()
+                rerank_provider._load_cross_encoder("m")
 
         self.assertIn("pip install sentence-transformers", str(ctx.exception))
 
