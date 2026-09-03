@@ -3,13 +3,17 @@
 Covers the serialized-context format the LLM is asked to cite against, and the
 SourceRef payload that carries those references back out to the API and GUI.
 """
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 from langchain_core.documents import Document
 
-from lahmajo.services.rag_service import _collect_sources
+from lahmajo.services.rag_service import _collect_sources, create_rag_agent
 from lahmajo.services.retrieval_service import (
+    CITATION_MARKER_RE,
     NO_CONTEXT_MESSAGE,
     PREVIEW_CHARS,
     SourceRef,
@@ -41,6 +45,55 @@ class TestSerializedContext(unittest.TestCase):
         self.assertIn("[source 1]", serialized)
         self.assertNotIn("score", serialized)
 
+    def test_citation_markers_in_a_chunk_are_neutralized(self):
+        # An ingested document can contain "[source 2]" itself - this project's own
+        # README does. Left raw, the model could cite it as if it were a header.
+        serialized = _serialize_context(
+            [(_doc("see [source 2] and [SOURCE 7] for detail", "a.txt"), None)]
+        )
+
+        self.assertIn("[source 1] a.txt", serialized)
+        self.assertIn("(source 2)", serialized)
+        self.assertIn("(SOURCE 7)", serialized)
+        # Exactly one bracketed marker survives: the generated header.
+        self.assertEqual(len(CITATION_MARKER_RE.findall(serialized)), 1)
+
+    def test_citation_markers_in_a_filename_are_neutralized(self):
+        # Nothing stops a user uploading "notes [source 2].txt"; the label lands in
+        # the header next to the generated marker.
+        serialized = _serialize_context([(_doc("body text", "notes [source 2].txt"), None)])
+
+        self.assertIn("[source 1] notes (source 2).txt", serialized)
+        self.assertEqual(len(CITATION_MARKER_RE.findall(serialized)), 1)
+
+    def test_source_refs_keep_the_real_filename(self):
+        # The label is neutralized for the model only - the ref must stay usable.
+        refs = _build_source_refs([(_doc("body", "notes [source 2].txt"), None)])
+
+        self.assertEqual(refs[0].source, "notes [source 2].txt")
+
+    def test_neutralizing_leaves_ordinary_bracketed_text_alone(self):
+        serialized = _serialize_context([(_doc("[1] a ref, [note] and [sources]", "a.txt"), None)])
+
+        for kept in ("[1]", "[note]", "[sources]"):
+            self.assertIn(kept, serialized)
+
+    def test_previews_keep_the_original_chunk_text(self):
+        # The preview is human-facing evidence, not model input - don't rewrite it.
+        refs = _build_source_refs([(_doc("see [source 2] here", "a.txt"), None)])
+
+        self.assertIn("[source 2]", refs[0].preview)
+
+    def test_start_index_continues_numbering(self):
+        # A second retrieval call in the same answer must not restart at [source 1].
+        serialized = _serialize_context(
+            [(_doc("gamma", "c.txt"), 0.5), (_doc("delta", "d.txt"), 0.25)], start_index=3
+        )
+
+        self.assertIn("[source 3] c.txt", serialized)
+        self.assertIn("[source 4] d.txt", serialized)
+        self.assertNotIn("[source 1]", serialized)
+
 
 class TestSourceRefs(unittest.TestCase):
     def test_indices_are_one_based_and_match_serialization(self):
@@ -50,6 +103,16 @@ class TestSourceRefs(unittest.TestCase):
         serialized = _serialize_context(scored)
 
         self.assertEqual([r.index for r in refs], [1, 2])
+        for ref in refs:
+            self.assertIn(f"[source {ref.index}] {ref.source}", serialized)
+
+    def test_start_index_offsets_refs_to_match_serialization(self):
+        scored = [(_doc("gamma", "c.txt"), 0.5), (_doc("delta", "d.txt"), 0.25)]
+
+        refs = _build_source_refs(scored, start_index=3)
+        serialized = _serialize_context(scored, start_index=3)
+
+        self.assertEqual([r.index for r in refs], [3, 4])
         for ref in refs:
             self.assertIn(f"[source {ref.index}] {ref.source}", serialized)
 
@@ -127,6 +190,108 @@ class TestRetrieveContextWithSources(unittest.TestCase):
         # The wrapper returns the original document objects, not enriched copies.
         self.assertIs(docs[0], doc_a)
         self.assertIn("[source 1]", serialized)
+
+
+class TestAgentReferenceNumbering(unittest.TestCase):
+    """The retrieval tool numbers references continuously across calls.
+
+    Nothing stops the agent from retrieving twice for one answer, and if each call
+    restarted at 1 the answer's `[source 1]` would resolve to two different chunks.
+    """
+
+    @staticmethod
+    def _fake_retrieve(query, use_hybrid=True, use_rerank=None, start_index=1):
+        refs = [
+            SourceRef(index=start_index, source=f"{query}-1.txt", score=None, length=5, preview="x"),
+            SourceRef(index=start_index + 1, source=f"{query}-2.txt", score=None, length=5, preview="y"),
+        ]
+        return "ctx", [], refs
+
+    @contextmanager
+    def _retrieval_tool(self, side_effect):
+        """Yield (retrieve_fn, retrieval_mock) for one agent, with retrieval stubbed.
+
+        The patches must stay live while the tool is *called*, not just while the
+        agent is built - the tool resolves retrieve_context_with_sources at call
+        time. The tool itself only exists inside create_rag_agent's closure, so it
+        is recovered from the create_agent call; its wrapped .func is driven
+        directly, since invoking the StructuredTool would drop the artifact under
+        test here.
+        """
+        with patch("lahmajo.services.rag_service.create_agent") as mock_create_agent,                 patch("lahmajo.services.rag_service.get_llm"),                 patch("lahmajo.services.rag_service.retrieve_context_with_sources") as mock_retrieve:
+            mock_retrieve.side_effect = side_effect
+            create_rag_agent()
+            yield mock_create_agent.call_args.kwargs["tools"][0].func, mock_retrieve
+
+    def test_second_call_does_not_restart_at_one(self):
+        with self._retrieval_tool(self._fake_retrieve) as (retrieve, _mock):
+            first_context, first_refs = retrieve("a")
+            _second_context, second_refs = retrieve("b")
+
+        self.assertEqual([r.index for r in first_refs], [1, 2])
+        self.assertEqual([r.index for r in second_refs], [3, 4])
+        self.assertIn("ctx", first_context)
+
+    def test_flattened_refs_have_unique_indices(self):
+        with self._retrieval_tool(self._fake_retrieve) as (retrieve, _mock):
+            _, first_refs = retrieve("a")
+            _, second_refs = retrieve("b")
+
+        message_a, message_b = MagicMock(), MagicMock()
+        message_a.artifact, message_b.artifact = first_refs, second_refs
+
+        indices = [ref.index for ref in _collect_sources([message_a, message_b])]
+
+        self.assertEqual(indices, [1, 2, 3, 4])
+        self.assertEqual(len(set(indices)), len(indices))
+
+    def test_empty_retrieval_does_not_consume_indices(self):
+        # A call that found nothing returns no refs; the next call still starts at 1.
+        side_effect = [(NO_CONTEXT_MESSAGE, [], []), self._fake_retrieve("b")]
+
+        with self._retrieval_tool(side_effect) as (retrieve, mock_retrieve):
+            retrieve("a")
+            _, refs = retrieve("b")
+            second_call = mock_retrieve.call_args_list[1]
+
+        self.assertEqual([r.index for r in refs], [1, 2])
+        self.assertEqual(second_call.kwargs["start_index"], 1)
+
+    def test_concurrent_calls_get_disjoint_indices(self):
+        """Sibling tool calls run on langgraph's ToolNode thread pool.
+
+        The retrieval stub blocks until every thread has entered it, so an
+        unsynchronised counter is guaranteed to hand out the same start_index twice
+        rather than only doing so on an unlucky interleaving.
+        """
+        threads = 4
+        entered = threading.Barrier(threads, timeout=0.25)
+
+        def slow_retrieve(query, use_hybrid=True, use_rerank=None, start_index=1):
+            try:
+                entered.wait()
+            except threading.BrokenBarrierError:
+                # Serialized by the lock, as intended - the barrier never fills.
+                pass
+            return self._fake_retrieve(query, start_index=start_index)
+
+        with self._retrieval_tool(slow_retrieve) as (retrieve, _mock):
+            with ThreadPoolExecutor(max_workers=threads) as pool:
+                results = list(pool.map(lambda i: retrieve(f"q{i}")[1], range(threads)))
+
+        indices = [ref.index for refs in results for ref in refs]
+
+        self.assertEqual(len(set(indices)), len(indices), f"duplicate indices: {indices}")
+        self.assertEqual(sorted(indices), list(range(1, 2 * threads + 1)))
+
+    def test_each_agent_starts_its_own_numbering(self):
+        # The counter is per agent, and agents are built per question.
+        with self._retrieval_tool(self._fake_retrieve) as (retrieve, _mock):
+            retrieve("a")
+        with self._retrieval_tool(self._fake_retrieve) as (retrieve, _mock):
+            _, refs = retrieve("a")
+
+        self.assertEqual([r.index for r in refs], [1, 2])
 
 
 class TestCollectSources(unittest.TestCase):

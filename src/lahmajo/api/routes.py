@@ -35,9 +35,11 @@ class AskRequest(BaseModel):
 class SourceRefResponse(BaseModel):
     """One citable excerpt behind an answer.
 
-    `index` matches the `[source N]` marker the answer can cite inline. `score` is
-    provider-specific and only comparable within a single response; it is null when
-    the ranking path could not supply one.
+    `index` matches the `[source N]` marker the answer can cite inline; indices stay
+    unique across an answer even when the agent retrieves more than once. `score` is
+    provider-specific and only comparable within one retrieval call, not across the
+    whole answer - two calls score different queries and may take different ranking
+    paths. It is null when the ranking path could not supply one.
     """
 
     index: int
