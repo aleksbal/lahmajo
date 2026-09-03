@@ -1,6 +1,7 @@
 # lahmajo/services/rag_service.py
 """RAG service - orchestrates the RAG agent for question answering."""
 import logging
+import threading
 from typing import Any, List, Optional, Tuple
 
 from langchain.agents import create_agent
@@ -33,6 +34,17 @@ def create_rag_agent(use_hybrid: bool = True, use_rerank: Optional[bool] = None)
     # are built per question (see ask_question_with_sources).
     next_source_index = 1
 
+    # Sibling tool calls in one assistant turn are not run one after another:
+    # langgraph's ToolNode dispatches them through a thread pool executor, so two
+    # retrievals can read next_source_index before either has added its own count
+    # back - handing out the same starting number twice. The lock is held across the
+    # whole retrieve-and-advance sequence rather than just the arithmetic, because
+    # the count cannot be advanced until retrieval says how many references it
+    # produced. That serializes concurrent retrievals for one answer, which is an
+    # acceptable trade here: retrieval also touches the process-wide index singleton
+    # and its document list (indexes/state.py), neither of which is thread-safe.
+    source_index_lock = threading.Lock()
+
     # Built per agent (not module-level) so use_hybrid/use_rerank can vary per request -
     # e.g. from the GUI/API, for comparing retrieval techniques without a server restart.
     @tool(response_format="content_and_artifact")
@@ -42,13 +54,14 @@ def create_rag_agent(use_hybrid: bool = True, use_rerank: Optional[bool] = None)
         Always use this tool to search the knowledge base before answering.
         """
         nonlocal next_source_index
-        serialized, _docs, sources = retrieve_context_with_sources(
-            query,
-            use_hybrid=use_hybrid,
-            use_rerank=use_rerank,
-            start_index=next_source_index,
-        )
-        next_source_index += len(sources)
+        with source_index_lock:
+            serialized, _docs, sources = retrieve_context_with_sources(
+                query,
+                use_hybrid=use_hybrid,
+                use_rerank=use_rerank,
+                start_index=next_source_index,
+            )
+            next_source_index += len(sources)
         # The artifact carries the SourceRefs rather than the raw documents: it is
         # what ask_question_with_sources() reads back off the ToolMessage to report
         # real references, and the documents' text is already in `serialized`.

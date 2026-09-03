@@ -3,7 +3,9 @@
 Covers the serialized-context format the LLM is asked to cite against, and the
 SourceRef payload that carries those references back out to the API and GUI.
 """
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -214,6 +216,33 @@ class TestAgentReferenceNumbering(unittest.TestCase):
 
         self.assertEqual([r.index for r in refs], [1, 2])
         self.assertEqual(second_call.kwargs["start_index"], 1)
+
+    def test_concurrent_calls_get_disjoint_indices(self):
+        """Sibling tool calls run on langgraph's ToolNode thread pool.
+
+        The retrieval stub blocks until every thread has entered it, so an
+        unsynchronised counter is guaranteed to hand out the same start_index twice
+        rather than only doing so on an unlucky interleaving.
+        """
+        threads = 4
+        entered = threading.Barrier(threads, timeout=0.25)
+
+        def slow_retrieve(query, use_hybrid=True, use_rerank=None, start_index=1):
+            try:
+                entered.wait()
+            except threading.BrokenBarrierError:
+                # Serialized by the lock, as intended - the barrier never fills.
+                pass
+            return self._fake_retrieve(query, start_index=start_index)
+
+        with self._retrieval_tool(slow_retrieve) as (retrieve, _mock):
+            with ThreadPoolExecutor(max_workers=threads) as pool:
+                results = list(pool.map(lambda i: retrieve(f"q{i}")[1], range(threads)))
+
+        indices = [ref.index for refs in results for ref in refs]
+
+        self.assertEqual(len(set(indices)), len(indices), f"duplicate indices: {indices}")
+        self.assertEqual(sorted(indices), list(range(1, 2 * threads + 1)))
 
     def test_each_agent_starts_its_own_numbering(self):
         # The counter is per agent, and agents are built per question.
