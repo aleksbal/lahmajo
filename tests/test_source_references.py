@@ -58,6 +58,20 @@ class TestSerializedContext(unittest.TestCase):
         # Exactly one bracketed marker survives: the generated header.
         self.assertEqual(len(CITATION_MARKER_RE.findall(serialized)), 1)
 
+    def test_citation_markers_in_a_filename_are_neutralized(self):
+        # Nothing stops a user uploading "notes [source 2].txt"; the label lands in
+        # the header next to the generated marker.
+        serialized = _serialize_context([(_doc("body text", "notes [source 2].txt"), None)])
+
+        self.assertIn("[source 1] notes (source 2).txt", serialized)
+        self.assertEqual(len(CITATION_MARKER_RE.findall(serialized)), 1)
+
+    def test_source_refs_keep_the_real_filename(self):
+        # The label is neutralized for the model only - the ref must stay usable.
+        refs = _build_source_refs([(_doc("body", "notes [source 2].txt"), None)])
+
+        self.assertEqual(refs[0].source, "notes [source 2].txt")
+
     def test_neutralizing_leaves_ordinary_bracketed_text_alone(self):
         serialized = _serialize_context([(_doc("[1] a ref, [note] and [sources]", "a.txt"), None)])
 

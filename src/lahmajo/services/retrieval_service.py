@@ -114,9 +114,11 @@ def _neutralize_citation_markers(text: str) -> str:
     text stays readable - "[source 2]" becomes "(source 2)" - because it is still
     content the answer may need to discuss.
 
-    Applied to the LLM-facing context only. SourceRef.preview keeps the chunk's
-    original text: it is evidence shown to a human next to its own header, where
-    there is nothing to confuse.
+    Applied to every untrusted string that reaches the model-facing header - the
+    chunk text and the source label, since an uploaded file can be named
+    "notes [source 2].txt". SourceRef keeps the originals in `preview` and
+    `source`: those are evidence shown to a human beside their own header, where
+    there is nothing to confuse, and `source` has to stay a usable filename.
     """
     return CITATION_MARKER_RE.sub(lambda match: f"({match.group(0)[1:-1].strip()})", text)
 
@@ -160,12 +162,12 @@ def _serialize_context(
     Labels start at `start_index` so consecutive retrieval calls in one agent run
     produce distinct markers rather than each restarting at "[source 1]".
 
-    Citation-shaped text inside a chunk is neutralized first - see
-    _neutralize_citation_markers().
+    Citation-shaped text in the chunk and in its source label is neutralized
+    first - see _neutralize_citation_markers().
     """
     blocks = []
     for i, (doc, score) in enumerate(scored_docs, start=start_index):
-        header = f"[source {i}] {_source_of(doc)}"
+        header = f"[source {i}] {_neutralize_citation_markers(_source_of(doc))}"
         if score is not None:
             header += f" (score: {score:.4f})"
         blocks.append(f"{header}\n{_neutralize_citation_markers(doc.page_content)}")
