@@ -47,9 +47,11 @@ class SourceRef:
 
     `score` is whatever the final ranking stage produced - a fused hybrid score, a
     reranker score, or a raw vector distance. It is provider-specific and only
-    comparable within a single response (see RerankProvider.rerank()); it is None
-    when the ranking path could not supply one (e.g. the bare similarity_search
-    fallback).
+    comparable within one retrieval call (see RerankProvider.rerank()) - NOT across
+    a whole answer: when the agent retrieves more than once, each call scores a
+    different query, and one may have fallen back to a different ranking path than
+    the other, so their numbers do not share a scale. It is None when the ranking
+    path could not supply one (e.g. the bare similarity_search fallback).
 
     Note there is deliberately no chunk position: chunk index within a document is
     not recorded at ingestion time (see ingestion/processing.py, which copies the

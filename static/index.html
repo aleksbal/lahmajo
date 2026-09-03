@@ -500,7 +500,9 @@
 
             const items = sources.map(source => {
                 // Score is provider-specific and only comparable within one
-                // response, so it is shown but not presented as a percentage.
+                // retrieval call - an answer built from two calls carries two
+                // unrelated scales - so it is shown as a raw number, never as a
+                // percentage or a bar that would invite comparing across items.
                 const score = (source.score === null || source.score === undefined)
                     ? ''
                     : ' &middot; score ' + Number(source.score).toFixed(4);

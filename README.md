@@ -344,8 +344,10 @@ Then open `http://localhost:8000` in your browser.
   agent retrieved more than once — numbering continues across retrieval calls rather
   than restarting at 1. `sources` is empty when the agent answered without
   retrieving, or when retrieval found nothing. `score` is provider-specific and only
-  comparable within a single response — it is `null` when the ranking path could not
-  supply one.
+  comparable within one retrieval call, not across the whole answer — if the agent
+  retrieved twice, each call scored a different query and possibly took a different
+  ranking path, so those numbers are not on a shared scale. It is `null` when the
+  ranking path could not supply one.
 - `POST /ingest` - Ingest documents (Form data: `url`, `files`, `chunking_strategy`)
 - `GET /debug/search?query=...&use_hybrid=true&use_rerank=false` - Debug endpoint to test retrieval directly. `use_rerank=true` previews reranked results for this one call (uses `RERANK_PROVIDER` if configured, otherwise falls back to the LLM reranker) regardless of the global `RERANK_PROVIDER` setting.
 
