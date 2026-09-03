@@ -1,6 +1,7 @@
 # lahmajo/services/retrieval_service.py
 """Retrieval service - handles document retrieval using hybrid search."""
 import logging
+import re
 from dataclasses import dataclass, asdict
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
@@ -24,6 +25,14 @@ DEDUPE_SIMILARITY_THRESHOLD = 0.8
 PREVIEW_CHARS = 300
 
 NO_CONTEXT_MESSAGE = "No relevant documents found in the knowledge base for this query."
+
+# Citation markers as they appear in the serialized context. Ingested text can
+# contain the same shape - this project's own README does, in its /ask example - and
+# a chunk carrying a literal "[source 2]" would be indistinguishable from the header
+# this module generates, letting the model cite a marker that resolves to an
+# unrelated chunk or to nothing at all. Matched loosely (case, inner spacing) so a
+# near-miss in the source text is neutralized too.
+CITATION_MARKER_RE = re.compile(r"\[\s*source\s+\d+\s*\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -97,6 +106,21 @@ def _source_of(doc: Document) -> str:
     return doc.metadata.get("source", "unknown")
 
 
+def _neutralize_citation_markers(text: str) -> str:
+    """Rewrite citation-shaped text in a chunk to round brackets.
+
+    Only the headers this module writes may look like citations, or the model can
+    cite a marker that came out of a document rather than one of its excerpts. The
+    text stays readable - "[source 2]" becomes "(source 2)" - because it is still
+    content the answer may need to discuss.
+
+    Applied to the LLM-facing context only. SourceRef.preview keeps the chunk's
+    original text: it is evidence shown to a human next to its own header, where
+    there is nothing to confuse.
+    """
+    return CITATION_MARKER_RE.sub(lambda match: f"({match.group(0)[1:-1].strip()})", text)
+
+
 def _build_source_refs(
     scored_docs: List[Tuple[Document, Optional[float]]], start_index: int = 1
 ) -> List[SourceRef]:
@@ -135,13 +159,16 @@ def _serialize_context(
 
     Labels start at `start_index` so consecutive retrieval calls in one agent run
     produce distinct markers rather than each restarting at "[source 1]".
+
+    Citation-shaped text inside a chunk is neutralized first - see
+    _neutralize_citation_markers().
     """
     blocks = []
     for i, (doc, score) in enumerate(scored_docs, start=start_index):
         header = f"[source {i}] {_source_of(doc)}"
         if score is not None:
             header += f" (score: {score:.4f})"
-        blocks.append(f"{header}\n{doc.page_content}")
+        blocks.append(f"{header}\n{_neutralize_citation_markers(doc.page_content)}")
     return "\n\n".join(blocks)
 
 

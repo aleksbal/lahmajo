@@ -13,6 +13,7 @@ from langchain_core.documents import Document
 
 from lahmajo.services.rag_service import _collect_sources, create_rag_agent
 from lahmajo.services.retrieval_service import (
+    CITATION_MARKER_RE,
     NO_CONTEXT_MESSAGE,
     PREVIEW_CHARS,
     SourceRef,
@@ -43,6 +44,31 @@ class TestSerializedContext(unittest.TestCase):
         serialized = _serialize_context([(_doc("x"), None)])
         self.assertIn("[source 1]", serialized)
         self.assertNotIn("score", serialized)
+
+    def test_citation_markers_in_a_chunk_are_neutralized(self):
+        # An ingested document can contain "[source 2]" itself - this project's own
+        # README does. Left raw, the model could cite it as if it were a header.
+        serialized = _serialize_context(
+            [(_doc("see [source 2] and [SOURCE 7] for detail", "a.txt"), None)]
+        )
+
+        self.assertIn("[source 1] a.txt", serialized)
+        self.assertIn("(source 2)", serialized)
+        self.assertIn("(SOURCE 7)", serialized)
+        # Exactly one bracketed marker survives: the generated header.
+        self.assertEqual(len(CITATION_MARKER_RE.findall(serialized)), 1)
+
+    def test_neutralizing_leaves_ordinary_bracketed_text_alone(self):
+        serialized = _serialize_context([(_doc("[1] a ref, [note] and [sources]", "a.txt"), None)])
+
+        for kept in ("[1]", "[note]", "[sources]"):
+            self.assertIn(kept, serialized)
+
+    def test_previews_keep_the_original_chunk_text(self):
+        # The preview is human-facing evidence, not model input - don't rewrite it.
+        refs = _build_source_refs([(_doc("see [source 2] here", "a.txt"), None)])
+
+        self.assertIn("[source 2]", refs[0].preview)
 
     def test_start_index_continues_numbering(self):
         # A second retrieval call in the same answer must not restart at [source 1].
