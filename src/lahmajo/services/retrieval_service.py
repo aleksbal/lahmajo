@@ -192,7 +192,9 @@ def retrieve_context_with_sources(
 
     Args:
         query: Search query
-        k: Number of documents to return
+        k: Maximum number of documents to return. Fewer come back when the corpus
+            has less to offer, or when the min-length/dedup filters drop enough of
+            the fetched candidates.
         use_hybrid: If False, skip BM25 entirely and use vector-only search - mainly
             useful for comparing retrieval techniques (e.g. from the GUI/API).
         use_rerank: Per-call override for reranking. None (default) uses the
@@ -218,7 +220,14 @@ def retrieve_context_with_sources(
         rerank_provider = get_rerank_provider() or LLMRerankProvider()
     else:
         rerank_provider = None
-    candidate_k = 20 if rerank_provider else 10
+    # Fetch more than k: the min-length filter and dedup below drop candidates, so a
+    # pool of exactly k would return fewer than k even when further good chunks exist
+    # just past rank k (and a fixed pool of 10 capped `search --k 15` at 10 outright).
+    # Doubling is headroom, not a guarantee - if filtering removes more than half the
+    # pool the result is still short, which is why k is documented as an upper bound.
+    # Refetching until k chunks survive would mean a retrieval loop for a case the
+    # corpus often cannot satisfy anyway, so it is deliberately not done.
+    candidate_k = max(2 * k, 20 if rerank_provider else 10)
 
     # Candidates are carried as (document, score) pairs all the way through, so the
     # score that the final ranking stage produced survives into the SourceRefs
