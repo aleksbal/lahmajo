@@ -54,15 +54,15 @@ lahmajo/                   # repo root
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
 │ Ingestion Layer │ │   Index Layer   │ │  Provider Layer │
 │  (Processing)   │ │   (Indexes)     │ │  (llm/)         │
-│  ingestion/      │ │   indexes/      │ │  llm_provider.py│
+│  ingestion/     │ │   indexes/      │ │  llm_provider.py│
 │  processing.py  │ │   state.py      │ │  embedding_     │
 │                 │ │   vector_       │ │  provider.py    │
 │                 │ │   provider.py   │ │                 │
 │                 │ │   bm25_         │ │                 │
 │                 │ │   provider.py   │ │                 │
-└────────┬────────┘ └────────┬────────┘ └────────┬────────┘
-         │                  │                  │
-         └──────────────────┴──────────────────┘
+└────────┬────────┘ └───────┬─────────┘ └────────┬────────┘
+         │                  │                    │
+         └──────────────────┴────────────────────┘
                             │
                             ▼
                  ┌─────────────────┐
