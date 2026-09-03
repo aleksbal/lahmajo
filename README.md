@@ -321,6 +321,42 @@ Then open `http://localhost:8000` in your browser.
 - **Ask Questions**: Query the knowledge base and get answers based on retrieved context
 - **Retrieval Options**: Toggle hybrid search and reranking per-question (checkboxes next to the question input) without restarting the server or changing env vars
 
+### CLI
+
+```bash
+python cli.py                      # interactive prompt
+python cli.py "your question"      # one-shot question
+python cli.py ask "your question"  # same, explicit subcommand
+python cli.py search "your query"  # retrieval only, no answer generation
+```
+
+`search` is the CLI counterpart of `GET /debug/search`: it runs retrieval and prints
+the chunks that would be handed to the LLM, without generating an answer. Useful for
+comparing retrieval configurations without starting a server.
+
+```bash
+python cli.py search "your query" --k 5 --no-hybrid   # vector-only, 5 chunks
+python cli.py search "your query" --rerank            # force reranking on
+python cli.py search "your query" --json              # machine-readable output
+```
+
+Both `ask` and `search` accept the same retrieval toggles the API exposes:
+
+| Flag | Effect |
+|---|---|
+| `--no-hybrid` | Vector-only search instead of hybrid BM25 + vector |
+| `--rerank` | Force reranking on, even if `RERANK_PROVIDER=none` |
+| `--no-rerank` | Force reranking off, even if `RERANK_PROVIDER` is set |
+| `--k N` | Number of chunks to return (`search` only, default 8) |
+| `--json` | Machine-readable output (`search` only) |
+
+Omitting both `--rerank` and `--no-rerank` defers to the `RERANK_PROVIDER` env var,
+matching the `null` default of `use_rerank` on `POST /ask`.
+
+**Note:** with the default in-process index (`VECTOR_INDEX_PROVIDER=in_memory`) the
+knowledge base only holds what was ingested in that same process, so a CLI `search`
+finds nothing unless an external backend such as Elasticsearch is configured.
+
 ### API Endpoints
 
 - `GET /` - Web UI
