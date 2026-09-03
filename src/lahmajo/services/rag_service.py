@@ -24,6 +24,15 @@ def create_rag_agent(use_hybrid: bool = True, use_rerank: Optional[bool] = None)
     # Get LLM from provider factory (configurable via environment variables)
     model = get_llm()
 
+    # Running reference count for this agent. create_agent does not stop the model
+    # from calling the retrieval tool more than once (a reformulated query after a
+    # weak first hit, and eventually multi-hop retrieval - issue #8), and numbering
+    # each call's excerpts from 1 would then hand the model two different chunks both
+    # labelled "[source 1]". Continuing the count keeps every marker resolvable to
+    # exactly one SourceRef. It lives in the closure, so it is per agent - and agents
+    # are built per question (see ask_question_with_sources).
+    next_source_index = 1
+
     # Built per agent (not module-level) so use_hybrid/use_rerank can vary per request -
     # e.g. from the GUI/API, for comparing retrieval techniques without a server restart.
     @tool(response_format="content_and_artifact")
@@ -32,9 +41,14 @@ def create_rag_agent(use_hybrid: bool = True, use_rerank: Optional[bool] = None)
         Retrieve information to help answer a query.
         Always use this tool to search the knowledge base before answering.
         """
+        nonlocal next_source_index
         serialized, _docs, sources = retrieve_context_with_sources(
-            query, use_hybrid=use_hybrid, use_rerank=use_rerank
+            query,
+            use_hybrid=use_hybrid,
+            use_rerank=use_rerank,
+            start_index=next_source_index,
         )
+        next_source_index += len(sources)
         # The artifact carries the SourceRefs rather than the raw documents: it is
         # what ask_question_with_sources() reads back off the ToolMessage to report
         # real references, and the documents' text is already in `serialized`.
@@ -70,12 +84,11 @@ def create_rag_agent(use_hybrid: bool = True, use_rerank: Optional[bool] = None)
 def _collect_sources(messages: List[Any]) -> List[SourceRef]:
     """Pull the SourceRefs the retrieval tool attached to its ToolMessage artifacts.
 
-    Today the agent performs at most one retrieval per answer (it either calls the
-    tool once or not at all - see issue #8), so in practice this returns one call's
-    references, numbered to match the `[source N]` markers in the context that call
-    produced. If multi-hop retrieval lands, several calls will each carry their own
-    1-based numbering and the markers will no longer be globally unique; warn rather
-    than silently emit colliding indices.
+    One entry per excerpt the agent was shown, across every retrieval call it made,
+    numbered to match the `[source N]` markers in the context it saw - the tool
+    numbers continuously (see create_rag_agent), so flattening several calls' lists
+    cannot produce two references with the same index. The duplicate check below is
+    a guard on that invariant, not an expected path.
     """
     artifacts = [
         message.artifact
@@ -88,13 +101,16 @@ def _collect_sources(messages: List[Any]) -> List[SourceRef]:
         if isinstance(artifact, list) and all(isinstance(ref, SourceRef) for ref in artifact)
     ]
 
-    if len(source_lists) > 1:
+    refs = [ref for refs in source_lists for ref in refs]
+
+    indices = [ref.index for ref in refs]
+    if len(set(indices)) != len(indices):
         logger.warning(
-            f"{len(source_lists)} retrieval calls in one answer - [source N] markers are "
-            "numbered per call and may collide across them."
+            f"Duplicate [source N] indices across {len(source_lists)} retrieval call(s): "
+            f"{sorted(indices)} - a citation may resolve to more than one document."
         )
 
-    return [ref for refs in source_lists for ref in refs]
+    return refs
 
 
 def ask_question_with_sources(

@@ -340,7 +340,9 @@ Then open `http://localhost:8000` in your browser.
   ```
 
   `index` matches the `[source N]` marker the model cites inline, so a citation resolves
-  to the file and text it came from. `sources` is empty when the agent answered without
+  to the file and text it came from. Indices are unique within a response even if the
+  agent retrieved more than once — numbering continues across retrieval calls rather
+  than restarting at 1. `sources` is empty when the agent answered without
   retrieving, or when retrieval found nothing. `score` is provider-specific and only
   comparable within a single response — it is `null` when the ranking path could not
   supply one.

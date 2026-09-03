@@ -32,7 +32,9 @@ class SourceRef:
 
     `index` is the number the excerpt carries in the serialized context handed to
     the LLM, so a `[source N]` marker in an answer resolves to the SourceRef with
-    `index == N`. Numbering is 1-based and per retrieval call.
+    `index == N`. Numbering is 1-based, and continues across retrieval calls within
+    one agent run via the `start_index` argument below - the agent may retrieve more
+    than once, and restarting at 1 each time would make `[source 1]` ambiguous.
 
     `score` is whatever the final ranking stage produced - a fused hybrid score, a
     reranker score, or a raw vector distance. It is provider-specific and only
@@ -95,10 +97,17 @@ def _source_of(doc: Document) -> str:
     return doc.metadata.get("source", "unknown")
 
 
-def _build_source_refs(scored_docs: List[Tuple[Document, Optional[float]]]) -> List[SourceRef]:
-    """Build 1-based, citable references for the final ranked chunks."""
+def _build_source_refs(
+    scored_docs: List[Tuple[Document, Optional[float]]], start_index: int = 1
+) -> List[SourceRef]:
+    """Build citable references for the final ranked chunks.
+
+    Numbering starts at `start_index` (1 by default) so a caller making several
+    retrieval calls can keep every reference distinct; it must match the numbering
+    _serialize_context() used for the same chunks.
+    """
     refs = []
-    for i, (doc, score) in enumerate(scored_docs, start=1):
+    for i, (doc, score) in enumerate(scored_docs, start=start_index):
         content = doc.page_content
         preview = content[:PREVIEW_CHARS] + "..." if len(content) > PREVIEW_CHARS else content
         refs.append(
@@ -113,7 +122,9 @@ def _build_source_refs(scored_docs: List[Tuple[Document, Optional[float]]]) -> L
     return refs
 
 
-def _serialize_context(scored_docs: List[Tuple[Document, Optional[float]]]) -> str:
+def _serialize_context(
+    scored_docs: List[Tuple[Document, Optional[float]]], start_index: int = 1
+) -> str:
     """Format retrieved chunks as the context string handed to the LLM.
 
     Each excerpt is labelled `[source N]` with its originating file, so the
@@ -121,9 +132,12 @@ def _serialize_context(scored_docs: List[Tuple[Document, Optional[float]]]) -> s
     used, e.g. [source 1]") refers to something the model can actually resolve.
     Before this, chunks were serialized with a bare `Source: <filename>` header and
     no numbering, leaving `[source N]` an unresolvable placeholder.
+
+    Labels start at `start_index` so consecutive retrieval calls in one agent run
+    produce distinct markers rather than each restarting at "[source 1]".
     """
     blocks = []
-    for i, (doc, score) in enumerate(scored_docs, start=1):
+    for i, (doc, score) in enumerate(scored_docs, start=start_index):
         header = f"[source {i}] {_source_of(doc)}"
         if score is not None:
             header += f" (score: {score:.4f})"
@@ -136,6 +150,7 @@ def retrieve_context_with_sources(
     k: int = 8,
     use_hybrid: bool = True,
     use_rerank: Optional[bool] = None,
+    start_index: int = 1,
 ) -> Tuple[str, List[Document], List[SourceRef]]:
     """
     Retrieve relevant documents for a query, and describe what was retrieved.
@@ -153,6 +168,9 @@ def retrieve_context_with_sources(
             RERANK_PROVIDER env var. True forces reranking on for this call even if
             RERANK_PROVIDER=none globally (falling back to the LLM reranker). False
             forces it off even if a rerank provider is configured globally.
+        start_index: Number the first returned excerpt gets in both the `[source N]`
+            labels and the SourceRefs. Callers that retrieve several times for one
+            answer pass the running total so markers stay unique across calls.
 
     Returns:
         Tuple of (serialized_context, documents, source_refs)
@@ -253,7 +271,11 @@ def retrieve_context_with_sources(
     if not top_docs:
         return NO_CONTEXT_MESSAGE, [], []
 
-    return _serialize_context(scored_docs), top_docs, _build_source_refs(scored_docs)
+    return (
+        _serialize_context(scored_docs, start_index),
+        top_docs,
+        _build_source_refs(scored_docs, start_index),
+    )
 
 
 def retrieve_context(
