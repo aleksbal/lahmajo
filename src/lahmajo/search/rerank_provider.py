@@ -12,7 +12,7 @@ import logging
 import os
 import re
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
@@ -131,7 +131,86 @@ class LLMRerankProvider(RerankProvider):
 
 
 # Environment variable keys
-RERANK_PROVIDER_ENV = "RERANK_PROVIDER"  # "none" (default), "llm"
+RERANK_PROVIDER_ENV = "RERANK_PROVIDER"  # "none" (default), "llm", "cross_encoder"
+RERANK_MODEL_ENV = "RERANK_MODEL"  # cross-encoder model name
+
+DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# Cross-encoder models are loaded once per model name and reused: get_rerank_provider()
+# is called on every retrieval, so constructing the model per instance would reload
+# weights on every query.
+_cross_encoder_cache: Dict[str, Any] = {}
+
+
+def _load_cross_encoder(model_name: str) -> Any:
+    """Load (and memoise) a sentence-transformers CrossEncoder."""
+    if model_name not in _cross_encoder_cache:
+        try:
+            from sentence_transformers import CrossEncoder
+        except ImportError as e:
+            # sentence-transformers pulls in torch, so it is an optional extra rather
+            # than a base dependency - say so instead of surfacing ModuleNotFoundError.
+            raise ImportError(
+                "sentence-transformers is required for the cross_encoder rerank provider. "
+                "Install it with: pip install sentence-transformers"
+            ) from e
+
+        logger.info(f"Loading cross-encoder model: {model_name}")
+        _cross_encoder_cache[model_name] = CrossEncoder(model_name)
+
+    return _cross_encoder_cache[model_name]
+
+
+class CrossEncoderRerankProvider(RerankProvider):
+    """
+    Rerank implementation using a local cross-encoder model.
+
+    A cross-encoder scores each (query, passage) pair directly in one forward pass,
+    which is what this step actually needs - unlike LLMRerankProvider, which asks a
+    generative model to improvise an ordering, costs a full generation round-trip,
+    and produces synthetic rank-derived scores. The scores here are the model's own
+    relevance scores.
+
+    Requires the optional `sentence-transformers` dependency (which pulls in torch);
+    it is deliberately not in base requirements.txt.
+    """
+
+    def __init__(self, model_name: Optional[str] = None):
+        """Initialize the cross-encoder rerank provider.
+
+        Args:
+            model_name: Cross-encoder model to use. Defaults to the RERANK_MODEL env
+                var, then to DEFAULT_CROSS_ENCODER_MODEL.
+        """
+        self.model_name = model_name or os.getenv(RERANK_MODEL_ENV, DEFAULT_CROSS_ENCODER_MODEL)
+        self.model = _load_cross_encoder(self.model_name)
+
+    def rerank(self, query: str, candidates: List[Document], top_k: int) -> List[Tuple[Document, float]]:
+        """Rerank candidates by cross-encoder relevance score, best first."""
+        if not candidates:
+            return []
+
+        pairs = [(query, doc.page_content) for doc in candidates]
+
+        try:
+            # One batched forward pass over every pair, not one call per candidate.
+            scores = self.model.predict(pairs)
+        except Exception as e:
+            # Same failure posture as LLMRerankProvider: never raise out of rerank(),
+            # fall back to the incoming order. The fallback scores are positional, not
+            # measured - they exist only to satisfy the (Document, float) contract.
+            logger.warning(f"Cross-encoder rerank failed, falling back to original order: {e}")
+            return [
+                (doc, 1.0 - (rank / len(candidates)))
+                for rank, doc in enumerate(candidates)
+            ][:top_k]
+
+        ranked = sorted(
+            zip(candidates, (float(score) for score in scores)),
+            key=lambda pair: pair[1],
+            reverse=True,
+        )
+        return ranked[:top_k]
 
 
 def get_rerank_provider() -> Optional[RerankProvider]:
@@ -141,9 +220,11 @@ def get_rerank_provider() -> Optional[RerankProvider]:
     Supported providers:
     - none: No reranking (default) - hybrid search's own ordering is used as-is
     - llm: Reuses the configured LLM (LLM_PROVIDER) to rank candidates
+    - cross_encoder: Local cross-encoder model (requires sentence-transformers)
 
     Environment variables:
     - RERANK_PROVIDER: Provider name (default: "none")
+    - RERANK_MODEL: Cross-encoder model name (cross_encoder provider only)
 
     Returns:
         RerankProvider instance, or None if reranking is disabled
@@ -156,13 +237,12 @@ def get_rerank_provider() -> Optional[RerankProvider]:
     elif provider == "llm":
         return LLMRerankProvider()
 
-    # Future providers can be added here:
-    # elif provider == "cross_encoder":
-    #     return CrossEncoderRerankProvider()
+    elif provider == "cross_encoder":
+        return CrossEncoderRerankProvider()
 
     else:
         raise ValueError(
             f"Unknown rerank provider: {provider}. "
-            f"Supported providers: none, llm. "
+            f"Supported providers: none, llm, cross_encoder. "
             f"Set {RERANK_PROVIDER_ENV} environment variable."
         )
