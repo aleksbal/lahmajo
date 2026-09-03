@@ -325,6 +325,29 @@ Then open `http://localhost:8000` in your browser.
 
 - `GET /` - Web UI
 - `POST /ask` - Ask a question (JSON: `{"question": "your question", "use_hybrid": true, "use_rerank": null}`). `use_hybrid` defaults to `true`; `use_rerank` defaults to `null`, which defers to the `RERANK_PROVIDER` env var — pass `true`/`false` to force it on/off for this call.
+
+  The response is `{"answer": "...", "sources": [...]}`. Each entry in `sources` is one
+  retrieved excerpt the answer could cite:
+
+  ```json
+  {
+    "answer": "The deadline is 30 June [source 2].",
+    "sources": [
+      {"index": 1, "source": "notes.md", "score": 0.0312, "length": 412, "preview": "..."},
+      {"index": 2, "source": "contract.pdf", "score": 0.0298, "length": 380, "preview": "..."}
+    ]
+  }
+  ```
+
+  `index` matches the `[source N]` marker the model cites inline, so a citation resolves
+  to the file and text it came from. Indices are unique within a response even if the
+  agent retrieved more than once — numbering continues across retrieval calls rather
+  than restarting at 1. `sources` is empty when the agent answered without
+  retrieving, or when retrieval found nothing. `score` is provider-specific and only
+  comparable within one retrieval call, not across the whole answer — if the agent
+  retrieved twice, each call scored a different query and possibly took a different
+  ranking path, so those numbers are not on a shared scale. It is `null` when the
+  ranking path could not supply one.
 - `POST /ingest` - Ingest documents (Form data: `url`, `files`, `chunking_strategy`)
 - `GET /debug/search?query=...&use_hybrid=true&use_rerank=false` - Debug endpoint to test retrieval directly. `use_rerank=true` previews reranked results for this one call (uses `RERANK_PROVIDER` if configured, otherwise falls back to the LLM reranker) regardless of the global `RERANK_PROVIDER` setting.
 
