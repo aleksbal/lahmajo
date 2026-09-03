@@ -105,7 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--k",
         type=_positive_int,
         default=8,
-        help="Number of chunks to return (default: 8, matching retrieve_context()).",
+        help=(
+            "Maximum number of chunks to return (default: 8, matching "
+            "retrieve_context()). Fewer come back if the corpus has less to offer."
+        ),
     )
     _add_retrieval_flags(search_parser)
     search_parser.add_argument(

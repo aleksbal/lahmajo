@@ -149,11 +149,15 @@ class TestCandidatePoolSizing(unittest.TestCase):
         # something left to hand back.
         self.assertEqual(self._pool_size_for(2, use_rerank=False), 10)
 
-    def test_default_k_pool_is_unchanged(self):
-        self.assertEqual(self._pool_size_for(8, use_rerank=False), 10)
-        self.assertEqual(self._pool_size_for(8, use_rerank=True), 20)
+    def test_pool_has_headroom_for_filtering_and_dedup(self):
+        # Fetching exactly k would return fewer than k as soon as one candidate is
+        # dropped for being too short or a near-duplicate.
+        for k in (8, 15, 30):
+            with self.subTest(k=k):
+                self.assertGreaterEqual(self._pool_size_for(k, use_rerank=False), 2 * k)
 
     def test_reranking_pool_gives_the_reranker_headroom(self):
+        self.assertEqual(self._pool_size_for(8, use_rerank=True), 20)
         self.assertGreaterEqual(self._pool_size_for(15, use_rerank=True), 30)
 
 
