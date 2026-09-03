@@ -196,6 +196,14 @@ class CrossEncoderRerankProvider(RerankProvider):
         if not candidates:
             return []
 
+        # A single candidate needs no reranking - its position cannot change, so
+        # short-circuit before _load_cross_encoder() rather than downloading and
+        # running a model to confirm the obvious. Mirrors LLMRerankProvider's fast
+        # path, including the nominal 1.0: unlike every other score this class
+        # reports, it is not the model's, because there is nothing to rank against.
+        if len(candidates) == 1:
+            return [(candidates[0], 1.0)]
+
         pairs = [(query, doc.page_content) for doc in candidates]
 
         try:

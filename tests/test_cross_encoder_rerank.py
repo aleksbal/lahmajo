@@ -136,11 +136,20 @@ class TestLazyModelLoading(CrossEncoderTestCase):
         self.assertEqual(ranked, [])
         module.CrossEncoder.assert_not_called()
 
+    def test_a_lone_candidate_does_not_load_the_model(self):
+        module, _model = _fake_sentence_transformers(predict_return=[0.5])
+
+        with patch.dict(sys.modules, {"sentence_transformers": module}):
+            ranked = CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=5)
+
+        self.assertEqual([d.page_content for d, _ in ranked], ["a"])
+        module.CrossEncoder.assert_not_called()
+
     def test_model_loads_on_the_first_rerank_with_candidates(self):
         module, _model = _fake_sentence_transformers(predict_return=[0.5])
 
         with patch.dict(sys.modules, {"sentence_transformers": module}):
-            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=1)
+            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a"), _doc("b")], top_k=2)
 
         module.CrossEncoder.assert_called_once_with("m")
 
@@ -157,13 +166,13 @@ class TestLazyModelLoading(CrossEncoderTestCase):
 
 class TestModelSelection(CrossEncoderTestCase):
     def test_defaults_to_the_documented_model(self):
-        module, _model = _fake_sentence_transformers(predict_return=[0.5])
+        module, _model = _fake_sentence_transformers(predict_return=[0.5, 0.4])
 
         with patch.dict(sys.modules, {"sentence_transformers": module}):
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("RERANK_MODEL", None)
                 provider = CrossEncoderRerankProvider()
-                provider.rerank("q", [_doc("a")], top_k=1)
+                provider.rerank("q", [_doc("a"), _doc("b")], top_k=2)
 
         self.assertEqual(provider.model_name, DEFAULT_CROSS_ENCODER_MODEL)
         module.CrossEncoder.assert_called_once_with(DEFAULT_CROSS_ENCODER_MODEL)
@@ -181,8 +190,8 @@ class TestModelSelection(CrossEncoderTestCase):
         module, _model = _fake_sentence_transformers(predict_return=[0.5])
 
         with patch.dict(sys.modules, {"sentence_transformers": module}):
-            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=1)
-            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a")], top_k=1)
+            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a"), _doc("b")], top_k=2)
+            CrossEncoderRerankProvider(model_name="m").rerank("q", [_doc("a"), _doc("b")], top_k=2)
 
         # get_rerank_provider() runs per retrieval; reloading weights per query
         # would make this provider unusable.
