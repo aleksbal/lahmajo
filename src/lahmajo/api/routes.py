@@ -146,7 +146,7 @@ async def debug_search(query: str, use_hybrid: bool = True, use_rerank: bool = F
                 results_with_scores = vector_index.similarity_search_with_score(query, k=candidate_k)
                 filtered_results = [(doc, float(score)) for doc, score in results_with_scores if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"
-            except:
+            except Exception:
                 results = vector_index.similarity_search(query, k=candidate_k)
                 filtered_results = [(doc, None) for doc in results if len(doc.page_content.strip()) >= 100]
                 search_type = "vector"

@@ -84,9 +84,9 @@ def cleanup_temp_files(file_paths: List[str], temp_dir: str):
         for file_path in file_paths:
             try:
                 os.remove(file_path)
-            except:
+            except OSError:
                 pass
         try:
             os.rmdir(temp_dir)
-        except:
+        except OSError:
             pass

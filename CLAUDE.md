@@ -124,7 +124,6 @@ Both `use_hybrid` (bool) and `use_rerank` (`Optional[bool]`, `None` = defer to `
 ## Notes for editing
 
 - `ARCHITECTURE.md` is the single source of truth for the layering/data-flow diagrams; README.md links to it instead of repeating it. Update `ARCHITECTURE.md` if you change layer boundaries — don't let a second copy of the diagram grow back in README.
-- `indexes/state.py` has a duplicated `get_vector_store()` function definition (harmless — the second silently shadows the first) — be aware when editing that file.
 - Config is entirely environment-variable driven (no config files); see `.env.docker` for the full set used by the Docker Compose setup and README.md for local-dev defaults.
 - `docs/EMBEDDINGS_EXPLANATION.md` explains the two separate embedding-model instances used during ingestion (`semantic_chunker_embeddings` vs. the document embedding model) — read it before touching `ingestion/processing.py`'s embedding calls.
 - `GET /` (`api/routes.py`) locates `static/index.html` via a `parents[3]` traversal from `__file__`, which only holds for an editable install (`pip install -e .` - how this project is actually installed, locally and in `docker/Dockerfile`). `LAHMAJO_STATIC_DIR` overrides it for a non-editable `pip install .`, where `static/` isn't bundled into the installed package. See README.md "Static UI Directory".
