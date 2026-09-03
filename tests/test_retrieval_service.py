@@ -121,6 +121,42 @@ class TestRetrievalService(unittest.TestCase):
         self.assertEqual(len(docs), 1)
 
 
+class TestCandidatePoolSizing(unittest.TestCase):
+    """The candidate pool must be able to satisfy the requested k.
+
+    It used to be a fixed 10 (20 when reranking), so `retrieve_context(q, k=15)`
+    returned at most 10 chunks while reporting that 15 were asked for.
+    """
+
+    def _pool_size_for(self, k, use_rerank):
+        """Return the k that retrieve_context() asked the index for."""
+        mock_index = MagicMock()
+        mock_index.similarity_search_with_score.return_value = []
+
+        with patch('lahmajo.services.retrieval_service.get_vector_index', return_value=mock_index),                 patch(
+                    'lahmajo.services.retrieval_service.get_rerank_provider',
+                    return_value=MagicMock() if use_rerank else None,
+                ):
+            retrieve_context("test query", k=k, use_hybrid=False)
+
+        return mock_index.similarity_search_with_score.call_args.kwargs["k"]
+
+    def test_pool_covers_a_large_k(self):
+        self.assertGreaterEqual(self._pool_size_for(15, use_rerank=False), 15)
+
+    def test_pool_keeps_its_floor_for_a_small_k(self):
+        # A small k still fetches a wider pool, so dedupe/min-length filtering has
+        # something left to hand back.
+        self.assertEqual(self._pool_size_for(2, use_rerank=False), 10)
+
+    def test_default_k_pool_is_unchanged(self):
+        self.assertEqual(self._pool_size_for(8, use_rerank=False), 10)
+        self.assertEqual(self._pool_size_for(8, use_rerank=True), 20)
+
+    def test_reranking_pool_gives_the_reranker_headroom(self):
+        self.assertGreaterEqual(self._pool_size_for(15, use_rerank=True), 30)
+
+
 class TestDedupeChunks(unittest.TestCase):
     """Test near-duplicate chunk collapsing (overlapping adaptive-chunking windows)."""
 

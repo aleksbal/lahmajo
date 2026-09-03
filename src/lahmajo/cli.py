@@ -32,6 +32,19 @@ EMPTY_INDEX_NOTE = (
 )
 
 
+def _positive_int(value: str) -> int:
+    """argparse type for --k.
+
+    Without this, `--k -1` is accepted and reaches retrieve_context(), whose
+    `filtered_docs[:k]` slice then drops the last chunk and returns the rest -
+    silently answering a different question than the one asked.
+    """
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be 1 or greater, got {number}")
+    return number
+
+
 def _add_retrieval_flags(parser: argparse.ArgumentParser) -> None:
     """Add the retrieval toggles shared by `ask` and `search`.
 
@@ -90,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument(
         "--k",
-        type=int,
+        type=_positive_int,
         default=8,
         help="Number of chunks to return (default: 8, matching retrieve_context()).",
     )

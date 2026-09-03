@@ -65,6 +65,17 @@ class TestParser(unittest.TestCase):
         with self.assertRaises(SystemExit):
             build_parser().parse_args(["search", "q", "--rerank", "--no-rerank"])
 
+    def test_k_must_be_positive(self):
+        # A negative k would reach retrieve_context()'s `[:k]` slice and quietly
+        # drop the last chunk(s) instead of being rejected.
+        for bad in ("-1", "0"):
+            with self.subTest(k=bad), self.assertRaises(SystemExit):
+                build_parser().parse_args(["search", "q", "--k", bad])
+
+    def test_k_must_be_a_number(self):
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["search", "q", "--k", "many"])
+
 
 class TestSearchCommand(unittest.TestCase):
     @patch("lahmajo.cli.retrieve_context")

@@ -347,7 +347,7 @@ Both `ask` and `search` accept the same retrieval toggles the API exposes:
 | `--no-hybrid` | Vector-only search instead of hybrid BM25 + vector |
 | `--rerank` | Force reranking on, even if `RERANK_PROVIDER=none` |
 | `--no-rerank` | Force reranking off, even if `RERANK_PROVIDER` is set |
-| `--k N` | Number of chunks to return (`search` only, default 8) |
+| `--k N` | Number of chunks to return (`search` only, default 8, must be ≥ 1) |
 | `--json` | Machine-readable output (`search` only) |
 
 Omitting both `--rerank` and `--no-rerank` defers to the `RERANK_PROVIDER` env var,

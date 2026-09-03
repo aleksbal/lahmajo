@@ -89,7 +89,11 @@ def retrieve_context(
         rerank_provider = get_rerank_provider() or LLMRerankProvider()
     else:
         rerank_provider = None
-    candidate_k = 20 if rerank_provider else 10
+    # The pool is never smaller than k, or a request for more chunks than the fixed
+    # pool size would silently return fewer without saying so (`lahmajo search --k 15`
+    # used to cap at 10). When reranking, it is also at least double k, so the reranker
+    # is choosing from more candidates than it returns rather than just reordering them.
+    candidate_k = max(2 * k, 20) if rerank_provider else max(k, 10)
 
     # Use hybrid search if requested and we have documents indexed, otherwise fall back
     # to vector only.
